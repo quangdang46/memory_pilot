@@ -15,14 +15,19 @@ Purpose: replace `[Open]` with `[Measured]` for the decisions the design depends
 
 | Spike | Question | Deliverable |
 |---|---|---|
-| S-1 | Can Go call `host_statistics64` + `proc_listpids` + `proc_pidinfo` without cgo? | `spike/mach/` + a note with the exact struct + count used |
+| S-1 | Can Go call `host_statistics64` + `proc_listpids` + `proc_pidinfo` without cgo? | `spike/mach/` + a note with the exact struct + count used (incl. the rev0-count-38 trap) |
 | S-2 | cgo dispatch source: latency and cost | measurements, p50/p95 |
 | S-3 | `kern.memorystatus_vm_pressure_level` values under induced pressure | observed value table |
 | S-4 | Idle RSS/CPU of an empty daemon with ticker + JSONL writer | baseline numbers |
 | S-5 | Per-PID sampling cost at N=600 | µs/pid, and the resulting CPU budget |
 | S-6 | Does a purge-style request actually reduce pressure? | ADR-006 verdict with numbers |
+| S-7 | Which per-process footprint source: `phys_footprint`, `RUSAGE_INFO_V4`, or `pti_resident_size` deltas? | measurement vs Activity Monitor + ADR-002 decision with the imprecision documented if (b) |
+
+**Why S-7 exists:** ADR-002's exit evidence needs a measurement spike, and it was previously implicit. It is now numbered so the Phase 0 gate has a named owner.
 
 **Exit gate:** ADR-001, ADR-002, ADR-004, ADR-008 updated to `Verified` or `Rejected`, each with evidence.
+
+**Parallelism rule (binding):** `P1SKEL` (module tree, stubs, build gates ST-1..ST-4) may run during Phase 0 — the gates must exist before the code they guard. **Every other Phase 1 task is blocked by the spike it depends on** (`P1PRES`←S-1,S-2; `P1VM`←S-1; `P1PROC`←S-1,S-5,S-7; `P1SELF`←S-4; `P1LAUNCHD`←S-4). A 24-hour run against unverified platform reads proves the wrong thing.
 
 ---
 
@@ -51,33 +56,43 @@ Estimator, forecaster, calibration, burst detection + the replay harness and the
 
 ## Phase 3 — Attribution & classification
 
-Process identity, grouping, delta accounting, classification buckets, `report`/`explain` renderers.
+Process identity, grouping, delta accounting, classification buckets.
 
 **Exit gate:** scenario MP-SCN-005 and the `leak-like` / `workload-growth` / `cache-sawtooth` traces classify correctly; the phrase test passes; coverage reporting is present everywhere.
 
+(`report`/`explain` renderers live in Phase 5 with the rest of the CLI surface — they consume attribution output but are built against stable CLI contracts, not against in-progress attribution work. Traceability: MP-REQ-062..064 belong to Phase 5 work items.)
+
 ---
 
-## Phase 4 — Policy, safety surface, CLI
+## Phase 4 — Policy, executor, intervention tiers, safety surface
 
-Policy engine, planner, executor, actionguard, and the providers within the ADR-013/ADR-014 v1 scope: T1 self-actions; T2 deferral via `mp run`; T3 detect+recommend only; **T4 cooperative-release framework (no default adapter)**; **L2 managed-stop (owned + pre-authorized + identity-revalidated)**; T5 advisories. Plus verification, IPC, `status`/`policy` commands.
+Policy engine, planner, executor, actionguard, and the providers within the ADR-013/ADR-014 v1 scope: T1 self-actions; T2 deferral via `mp run`; T3 detect+recommend only; **T4 cooperative-release framework (no default adapter)**; **L2 managed-stop (owned + pre-authorized + identity-revalidated)**; T5 advisories. Plus verification, escalation-ladder wiring, in-development safety runs, and the development-time exit gate G-P4.
 
 **Exit gate:** the full safety suite is green — ST-22 unmodified, ST-23/ST-24 added — and the per-class breakers/budgets exist. No mechanism that frees *non-owned, non-cooperating* memory exists; T3 `act` still has no executor code path (ADR-012/ADR-013). The single signal call site is `stopOwnedChild` (ST-1), and a managed stop can only target an `OwnedPid`.
 
----
-
-## Phase 5 — Long-run validation
-
-7-day observe-mode deployment on the owner's machine; baseline vs. with-tool incident counts (MP-REQ-050); calibration report from real data.
-
-**Exit gate:** a written report with real numbers; the go/no-go for the enforce mode of any future provider.
+(`status`/`policy`/CLI commands are built in Phase 5; the Phase 4 gate needs a harness CLI, not the user-facing surface. The pre-release re-run of the full suite is `P6SAFETY` in Phase 6 — G-P4 proves the executor as built, P6SAFETY proves the product as shipped.)
 
 ---
 
-## Phase 6 — (Conditional) first real provider
+## Phase 5 — CLI surface, reporting, session guidance
 
-Only if Phase 0 S-6 or a later experiment produces a mechanism with a measured, repeatable, bounded effect.
+`status`/`report`/`explain`/`doctor`/`policy`, session lifecycle with resume awareness, orphan detect+recommend reporting, relief-candidate reporting, and the report-language honesty rules. Consumes Phase 2–4 outputs through stable contracts.
 
-**Exit gate:** canary evidence over ≥2 weeks with no adverse events.
+**Exit gate:** golden CLI output tests, exit-code namespace tests, SCN-008/009/010 green; no advisory promises recoverability without a verified adapter; no report presents self-trim as system relief.
+
+---
+
+## Phase 6 — Long-run validation, fault injection, and canary
+
+Fault-injection suites, 72-hour soak, replay against the full corpus, 7-day observe-mode deployment on the owner's machine (MP-REQ-050 baseline vs. with-tool incident counts), calibration report from real data, and the canary-evidence gate for T4/L2 enforce promotion.
+
+**Exit gate:** a written report with real numbers; the go/no-go for the enforce mode of any canary-gated class. The former "Phase 6 — first real provider" becomes: *any provider beyond the ADR-014 paths enters through the same v1-scope-contract §5 widening procedure (ADR amendment + safety suite + measured canary evidence), regardless of phase numbering.*
+
+---
+
+## Phase-numbering note (binding)
+
+The implementation beads (`.beads/`) are the detailed build plan; this roadmap is the authority for **phase scope and exit gates**. Where they once disagreed — trace corpus/replay placement, CLI placement, the safety-suite's two runs (development G-P4 vs. pre-release P6SAFETY), and the S-7 footprint spike — the two now agree as written above and in the Phase 1 epic's parallelism rule. A future disagreement is a bug in one of the two, to be resolved by editing the stale one, not by interpreting around it.
 
 ---
 

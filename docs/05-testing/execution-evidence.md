@@ -70,7 +70,11 @@ A record with an empty *What this does NOT prove* is treated as overclaiming and
 | ST-1/ST-2 → Compiled/tested | the build they gate does not exist | write the scan as a build step in the skeleton; it can be proven *effective* by injecting a canary call that fails the build |
 | Any → Verified on macOS | the target machine has not run the daemon | Phase 5 observe-mode deployment |
 
-## 5. Anti-patterns
+## 5. Counting requirements (audit note, 2026-10-24)
+
+The distinct, testable requirement IDs in `docs/00-product/requirements.md` number **62** (MP-REQ-001..080 with gaps for reserved numbers). An earlier working note said 63 — that count came from a loose regex that also matched the literal string `MP-REQ-` in a table header. The authoritative count is what a script produces by matching `MP-REQ-[0-9]{3}` and de-duplicating: 62. All 62 appear in bead COVERS notes. If a future count differs, re-run the strict regex — do not eyeball it.
+
+## 6. Anti-patterns
 
 | Don't | Why |
 |---|---|
