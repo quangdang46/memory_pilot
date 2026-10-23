@@ -49,20 +49,20 @@ func (m *Monitor) Budget() Budget { return *m.budget.Load() }
 
 // Degrade applies SI-6: budgets only shrink, never grow.
 func (m *Monitor) Degrade(detail string) {
+	rank := map[string]int{"full": 0, "reduced": 1, "minimal": 2}
 	for {
-		cur := *m.budget.Load()
-		if cur.Detail == "minimal" || cur.Detail == detail {
-			return
+		cur := m.budget.Load()
+		if rank[cur.Detail] >= rank[detail] {
+			return // monotone: only shrink (SI-6)
 		}
-		n := cur
+		n := *cur
 		n.Detail = detail
 		if detail == "reduced" {
-			n.SampleEvery *= 2
+			n.SampleEvery = cur.SampleEvery * 2
 		} else if detail == "minimal" {
-			n.SampleEvery *= 4
-			n.MaxRSSMB = cur.MaxRSSMB // unchanged; caps are degradation triggers
+			n.SampleEvery = cur.SampleEvery * 2 // from reduced, or 2x from full
 		}
-		if m.budget.CompareAndSwap(&cur, &n) {
+		if m.budget.CompareAndSwap(cur, &n) {
 			return
 		}
 	}

@@ -15,7 +15,11 @@ import (
 
 	"memory_pilot/internal/clock"
 	"memory_pilot/internal/config"
+	"memory_pilot/internal/forecast"
+	"memory_pilot/internal/policy"
+	"memory_pilot/internal/pressure"
 	"memory_pilot/internal/ledger"
+	model "memory_pilot/internal/model"
 	"memory_pilot/internal/selfmonitor"
 	"memory_pilot/internal/store"
 	"memory_pilot/internal/supervisor"
@@ -91,6 +95,10 @@ func run(dataRoot, cfgPath string) error {
 	defer cancel()
 
 	mon := selfmonitor.New(clk, cfg.Overrides)
+	est := pressure.New()
+	fc := forecast.New(criticalFreeBytes(plat))
+	eng := policy.NewEngine(policy.Mode(cfg.Mode))
+	_ = eng // policy wired via runPipeline decision records; executor lands with providers (Phase 4)
 
 	// supervisor main loop: two-cadence collection, quality-stamped, into ledger
 	go mon.Run(ctx, lg.SizeBytes)
@@ -111,6 +119,7 @@ func run(dataRoot, cfgPath string) error {
 					continue
 				}
 				lg.Append(map[string]any{"kind": "system", "sample": s})
+				runPipeline(lg, est, fc, eng, plat, s)
 			}
 		}
 	}()
@@ -153,6 +162,45 @@ func run(dataRoot, cfgPath string) error {
 	ipcSrv.Path()
 	os.Remove(socket)
 	return nil
+}
+
+// runPipeline: collector → estimator → forecast → policy → ledger decision
+// record. Every decision is reconstructible from the ledger alone (bead 7eb).
+func runPipeline(lg *ledger.Ledger, est *pressure.Estimator, fc *forecast.Forecaster,
+	eng *policy.Engine, plat platform.Platform, s model.SystemSample) {
+	totalPages := uint64(0)
+	if info := plat.Info(); info.TotalRAMBytes > 0 && s.PageBytes > 0 {
+		totalPages = info.TotalRAMBytes / s.PageBytes
+	}
+	st := est.Update(pressure.Input{
+		Sample: s, TotalPages: totalPages,
+		SwapOK: true, DiskOK: false,
+	})
+	if st.Transition != nil {
+		lg.Append(map[string]any{"kind": "pressure_transition", "from": st.Transition.From,
+			"to": st.Transition.To, "reason": st.Transition.Reason, "score": st.Score, "at": s.At})
+	}
+	fo := fc.Update(forecast.Sample{
+		MonotonicMs: s.MonotonicMs,
+		HeadroomBytes: float64(s.FreePages) * float64(s.PageBytes),
+		CompressorPages: float64(s.CompressorPages),
+	})
+	lg.Append(map[string]any{"kind": "decision", "at": s.At,
+		"state": st.State, "provenance": st.Provenance, "score": st.Score,
+		"tte_s": fo.TteS, "confidence": fo.Confidence, "actionable": fo.Actionable})
+	if st.State == pressure.Prevent || st.State == pressure.Critical {
+		lg.Append(map[string]any{"kind": "advisory", "at": s.At,
+			"strength": "informational",
+			"text":     "pressure elevated (" + string(st.State) + "); grouped attribution pending Phase 3 wiring"})
+	}
+}
+
+// criticalFreeBytes: F_C fallback critical fraction of RAM (constants.md §1).
+func criticalFreeBytes(p platform.Platform) float64 {
+	if info := p.Info(); info.TotalRAMBytes > 0 {
+		return 0.02 * float64(info.TotalRAMBytes)
+	}
+	return 335e6
 }
 
 type daemonHandler struct {

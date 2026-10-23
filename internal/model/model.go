@@ -159,3 +159,11 @@ type Event struct {
 	Kind  string
 	Data  map[string]any
 }
+
+// OwnedPidRef authorizes the single signal call site (executor.stopOwnedChild).
+// Constructed only from the daemon's own spawn records — never from process
+// scans (SI-1).
+type OwnedPidRef struct {
+	Pid  int32
+	Pgid int32
+}
