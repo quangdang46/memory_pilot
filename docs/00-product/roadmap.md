@@ -59,9 +59,9 @@ Process identity, grouping, delta accounting, classification buckets, `report`/`
 
 ## Phase 4 — Policy, safety surface, CLI
 
-Policy engine, planner, executor, actionguard, providers within the ADR-013 v1 scope (T1 self-actions; T2 deferral via `mp run`; T3 detect+recommend only; T5 advisories), verification, IPC, `status`/`policy` commands.
+Policy engine, planner, executor, actionguard, and the providers within the ADR-013/ADR-014 v1 scope: T1 self-actions; T2 deferral via `mp run`; T3 detect+recommend only; **T4 cooperative-release framework (no default adapter)**; **L2 managed-stop (owned + pre-authorized + identity-revalidated)**; T5 advisories. Plus verification, IPC, `status`/`policy` commands.
 
-**Exit gate:** the full safety suite is green, including ST-22 (the forbidden scenario). No mechanism that frees another process's memory exists; T3 `act` has no executor code path (ADR-012/ADR-013).
+**Exit gate:** the full safety suite is green — ST-22 unmodified, ST-23/ST-24 added — and the per-class breakers/budgets exist. No mechanism that frees *non-owned, non-cooperating* memory exists; T3 `act` still has no executor code path (ADR-012/ADR-013). The single signal call site is `stopOwnedChild` (ST-1), and a managed stop can only target an `OwnedPid`.
 
 ---
 

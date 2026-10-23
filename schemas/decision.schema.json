@@ -21,7 +21,7 @@
         "properties": {
           "action": {
             "type": "string",
-            "enum": ["TrimOwnBuffers", "RotateOwnLedger", "ReduceSamplingDetail", "EmitAdvisory", "RecommendCloseSession", "RecommendReduceConcurrency", "DeferLaunch", "RequestGracefulQuit", "TerminateVerifiedOrphan", "RequestReclaimFromProvider"]
+            "enum": ["TrimOwnBuffers", "RotateOwnLedger", "ReduceSamplingDetail", "EmitAdvisory", "RecommendCloseSession", "RecommendReduceConcurrency", "DeferLaunch", "RequestGracefulQuit", "TerminateVerifiedOrphan", "RequestCooperativeRelease", "StopManagedWorkload"]
           },
           "provider_id": { "type": ["string", "null"] },
           "expected_effect_bytes": {
@@ -42,7 +42,7 @@
       "properties": {
         "action": {
           "type": "string",
-          "enum": ["TrimOwnBuffers", "RotateOwnLedger", "ReduceSamplingDetail", "EmitAdvisory", "RecommendCloseSession", "RecommendReduceConcurrency", "DeferLaunch", "RequestGracefulQuit", "TerminateVerifiedOrphan", "RequestReclaimFromProvider"]
+          "enum": ["TrimOwnBuffers", "RotateOwnLedger", "ReduceSamplingDetail", "EmitAdvisory", "RecommendCloseSession", "RecommendReduceConcurrency", "DeferLaunch", "RequestGracefulQuit", "TerminateVerifiedOrphan", "RequestCooperativeRelease", "StopManagedWorkload"]
         },
         "provider_id": { "type": ["string", "null"] }
       }
@@ -57,6 +57,7 @@
         "forecast_not_actionable",
         "rate_limited",
         "breaker_open",
+        "adapter_unsupported",
         "policy_prohibits"
       ]
     },

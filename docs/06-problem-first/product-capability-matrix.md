@@ -37,11 +37,12 @@ The previous spec's implicit promise was "we detect and we tell you". This docum
 | **Orphan recommendation (T3 recommend)** | ✅ | ⚠️ | — | ✅ | |
 | Orphan termination (T3 act) | ✅ | — | ✅ | — | **off by default** |
 | Self-trim (T1) | ✅ | — | ⚠️ | — | R only for our own footprint |
-| Cooperative release (T4) | — | — | — | — | **empty: no API exists** |
+| Cooperative release (T4) | — | — | ⚠️ (framework; no default adapter) | — | ADR-014: per-registered-adapter, measured, own breaker |
+| Stop owned managed workload (L2) | — | ⚠️ (prevents further growth) | ⚠️ | — | ADR-014: owned + pre-authorized + identity revalidated |
 | Suppressing the OS dialog | — | — | — | — | impossible, and wrong |
-| Preventing a running process from growing | — | — | — | — | impossible without T3 |
+| Preventing a running process from growing | — | — | — | — | impossible without T3/L2 |
 
-**Reading the matrix:** the R column has almost nothing in it, and that is correct. A user-space daemon on macOS **cannot** remediate memory held by another process without either cooperation (which does not exist) or termination (which destroys work). The product's value is concentrated in **P (admission control)** and **A (advice)**.
+**Reading the matrix (post-ADR-014):** the R column is no longer empty — T4 has a framework (no default adapter) and L2 stops owned workloads — but both are bounded: cooperation is per-app and opt-in, and L2 reaches only what the daemon itself spawned. A user-space daemon still **cannot** remediate *uncooperative, non-owned* memory without termination (which destroys work). The product's center of gravity remains **P (admission control)** and **A (advice)**; R is now real but narrowly scoped.
 
 ---
 
@@ -49,7 +50,7 @@ The previous spec's implicit promise was "we detect and we tell you". This docum
 
 The honest product statement is:
 
-> Memory Pilot prevents the situations it can prevent — by stopping work from starting that would not fit, and by telling you precisely what is consuming memory before the system forces the issue. It cannot free memory that another application is holding, and it will not kill your sessions to do it.
+> Memory Pilot prevents the situations it can prevent — by stopping work from starting that would not fit, and by telling you precisely what is consuming memory before the system forces the issue. It can ask an application that has published a release API to shrink (only if you enable that integration), and it can stop a session it started for you (only if you authorized it). It cannot free memory an uncooperative application is holding, and it will never terminate a process it did not spawn.
 
 That is a narrower promise than "no more memory warnings", and it is the only one that survives contact with macOS.
 

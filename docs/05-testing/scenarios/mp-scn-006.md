@@ -25,7 +25,7 @@ Trace: `planner-positive` (synthetic, with a stub provider).
 
 | # | Assertion |
 |---|---|
-| F1 | `Decision.chosen != null` and names `RequestReclaimFromProvider` with `provider_id == "stub-reclaim"` |
+| F1 | `Decision.chosen != null` and names `RequestCooperativeRelease` with `provider_id == "stub-reclaim"` |
 | F2 | `Decision.no_action_reason == null` |
 | F3 | An `ActionResult` is produced with `outcome == "succeeded"` |
 | F4 | Verification is scheduled; after the window, `verdict ∈ {effective, partial}` (the stub returns a real measured delta) |

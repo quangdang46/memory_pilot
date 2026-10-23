@@ -133,7 +133,7 @@ This single verified fact converts the product's most common scenario from "watc
 | `memory_pressure -l` / purge | exists | frees file cache; no evidence it reduces pressure; **excluded** (ADR-006) |
 | App-specific APIs (browsers, IDEs) | varies | per-integration cost, per-integration verification |
 
-**Verdict:** remains `Investigate`. Not a v1 mechanism. The honest answer is that this lever is currently empty.
+**Verdict (amended by ADR-014, accepted 2026-10-23):** the *universal* version of this lever remains nonexistent — no generic "release your heap" API will appear. What ADR-014 admitted is the *per-app framework*: one adapter per documented vendor API, each measured, opt-in, canary-gated, with `unsupported` fallback. Rank 4 below becomes "Yes — framework with no default adapter". The Claude Code `/compact`-style hook stays `[Open]` until a programmatic, documented hook is found.
 
 ---
 
@@ -156,6 +156,6 @@ This single verified fact converts the product's most common scenario from "watc
 | 1 | **Admission control** | high | high | low (defer only) | **Yes — must be** |
 | 2 | **Session-close recommendation with resume** | high (when followed) | high | none (user decides) | **Yes — must be** |
 | 3 | Orphan detection | medium | medium | none if observe-only | **Yes — observe only** |
-| 4 | Cooperative release | unknown | low | medium | No |
+| 4 | Cooperative release | unknown per adapter | low (per-app) | medium | **framework only** (ADR-014); adapters off, measured before canary |
 | 5 | Automatic orphan reaping | medium | medium | **high** | **No** (ADR-013) |
 | 6 | Anything touching another process's memory | — | none | — | No |

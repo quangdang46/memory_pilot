@@ -16,9 +16,13 @@ Actions are a **closed sum type**. Adding an action is a code change with a spec
 // internal/action — the ONLY package that may touch the system.
 type Action interface{ actionTag() }   // sealed
 
-type RequestReclaimFromProvider struct {   // ask a cooperating subsystem to shrink
-    ProviderID ProviderID
+type RequestCooperativeRelease struct {    // ask a REGISTERED adapter to shrink (ADR-014 T4)
+    AdapterID   AdapterID
     BudgetBytes int64
+}
+type StopManagedWorkload struct {          // stop a process WE spawned, pre-authorized (ADR-014 L2)
+    Target      OwnedPid                   // validated type: identity tuple + parent check, NOT a raw pid
+    Reason      StopReason
 }
 type TrimOwnBuffers struct{}               // drop our own memory
 type RotateOwnLedger struct{}              // rotate our own log segments
@@ -28,7 +32,9 @@ type EmitAdvisory struct {                 // produce a user-facing record
 }
 ```
 
-**Nothing else exists.** In particular there is no `Signal`, `Suspend`, `Terminate`, `Restart`, `PurgeAll`, `RunCommand`, or `Exec` variant. A future feature cannot "just add" one without editing this file and the corresponding ADR — which is exactly the friction we want.
+**Nothing else exists.** In particular there is no `Signal`, `Suspend`, `Terminate`, `Restart`, `PurgeAll`, `RunCommand`, or `Exec` variant, and no way to name an arbitrary PID. `StopManagedWorkload` is the **only** externally-effective variant, and its target type makes an unowned PID unconstructible (ADR-014 §2). A future feature cannot "just add" one without editing this file and the corresponding ADR — which is exactly the friction we want.
+
+**Retired name:** `RequestReclaimFromProvider` no longer exists; the cooperative path is `RequestCooperativeRelease` through a registered adapter (ADR-014, owner naming decision). Any code or doc still using the old name is a contract bug.
 
 ### 1.1 Why no generic "run this command" escape hatch
 
@@ -62,9 +68,11 @@ type Provider struct {
 | `TrimOwnBuffers` | ✓ implemented | frees own RSS back to OS | all modes | trivial, always safe |
 | `RotateOwnLedger` | ✓ implemented | disk only | all modes | does not reduce RAM pressure; kept for disk headroom |
 | `EmitAdvisory` | ✓ implemented | 0 bytes | all modes | the honest "we cannot fix this" path |
-| `RequestReclaimFromProvider` | ⚠ unproven | unknown | canary+ only, after measurement | see §3 |
+| `RequestCooperativeRelease` | ⚠ framework + `StatusUnproven` adapters | declared per adapter | `observe` plans; executes in `canary`+ after measurement | ADR-014 §1 |
+| `StopManagedWorkload` | ✓ managed-only, per-launch authorized | bounded (the workload's own footprint) | `canary`+ after canary evidence | ADR-014 §2 |
 | `memory_pressure`-style purge request | ⏳ investigate | unknown; may hurt | **never in v1** | ADR-006 |
-| App-cooperative release (per-app API) | ⏳ investigate | unknown | never in v1 | ADR-011 |
+| App-cooperative release via a **generic/universal** API | ✗ does not exist | — | **impossible, not merely out** | no such macOS API |
+| `SuspendManagedWorkload` | ✗ not admitted | no measured RAM drop | **never in v1** | ADR-014 (needs a separate ADR with evidence) |
 
 **If the only available relief is `EmitAdvisory`, that is a legitimate outcome** and the product says so. A tool that always finds something to do is lying about its capabilities.
 
@@ -76,25 +84,27 @@ These are two different questions and the docs must not blur them:
 
 | Question | Answer |
 |---|---|
-| Can the architecture express a cooperative release request? | **Yes** — `RequestReclaimFromProvider` + `Kind: app-cooperative` exist in the `Provider` contract |
-| Is any such provider enabled in v1? | **No** — the v1 allowlist is exactly `{TrimOwnBuffers, RotateOwnLedger, EmitAdvisory}` |
-| Can an unproven provider run at all? | **No** — `StatusUnproven` providers cannot run outside `observe` |
+| Can the architecture express a cooperative release request? | **Yes** — `RequestCooperativeRelease` + the registered-adapter contract (ADR-014) |
+| Is a cooperative adapter enabled in v1 by default? | **No** — framework ships, every adapter is off until the user enables that integration |
+| Can an unproven adapter run at all? | **No** — `StatusUnproven` adapters cannot run outside `observe` |
+| Can v1 stop a process the daemon did not spawn? | **No** — `StopManagedWorkload` takes an `OwnedPid`; an unowned target is unconstructible |
 
-See SI-1a for the *safety* boundary this supports (never coerce; may request, with explicit opt-in).
+See SI-1a for the *safety* boundary this supports (never coerce an unwilling/non-owned process; may request from a consenting, registered app).
 
 ### The v1 rule, stated so it cannot be misread
 
-> **In v1 there is no action in the active allowlist that affects the memory of another application. A new provider enters the active set only after (a) a written design decision, (b) a measured effect on the target machine, and (c) a safety verification — in that order.**
+> **In v1 the only action that affects another process is `StopManagedWorkload`, restricted to processes the daemon itself spawned under explicit prior authorization, identity-revalidated at execute time. A cooperative adapter enters the active set only after (a) a written design decision, (b) a measured effect on the target machine, and (c) a safety verification — in that order.**
 
 This matters because `canary` and `enforce` are *modes*, and a reader could interpret "mode: enforce" as "all providers are permitted". It is not:
 
 ```
 Mode governs WHICH ALLOWLISTED actions may run.
 The allowlist governs WHAT EXISTS as a runnable action.
-A mode can never promote a provider that is not on the allowlist.
+A mode can never promote a provider that is not on the allowlist,
+and can never widen an action's target set beyond its type's construction rules.
 ```
 
-Concretely, `enforce` is not "everything is allowed". It is "the allowlisted provider set may run up to its full budget instead of a canary-limited one". Since the v1 allowlist contains no cross-application action, `enforce` in v1 cannot affect another app no matter how it is configured.
+Concretely, `enforce` is not "everything is allowed". It is "the allowlisted provider set may run up to its full budget instead of a canary-limited one". No mode setting can make `StopManagedWorkload` target an unmanaged PID, because `OwnedPid` cannot be constructed for one; and no mode setting can call an adapter the user has not enabled.
 
 **Test (T-AA-10):** construct a config with `mode = enforce` and a provider registry containing only unproven providers; assert zero actions can execute and every decision records `no_safe_relief`. A build that fails this test has confused mode with permission.
 
@@ -150,8 +160,8 @@ Refusals are recorded as first-class events. A refusal is a success of the safet
 
 | Mode | Actions permitted | Purpose |
 |---|---|---|
-| `observe` (default, and the state after any fault) | `TrimOwnBuffers`, `RotateOwnLedger`, `EmitAdvisory` | Only self-affecting actions. Safe forever. |
-| `canary` | observe + `RequestReclaimFromProvider` up to a strict budget, with post-hoc comparison logged | Limited live trial; every invocation compared against what observe-mode would have done |
+| `observe` (default, and the state after any fault) | `TrimOwnBuffers`, `RotateOwnLedger`, `EmitAdvisory` (+ planning for everything else, execution for none) | Only self-affecting actions execute. Safe forever. |
+| `canary` | observe + `RequestCooperativeRelease` (enabled adapters) + `StopManagedWorkload` (pre-authorized managed targets), each up to its own strict budget class, with post-hoc comparison logged | Limited live trial; every invocation compared against what observe-mode would have done |
 | `enforce` | canary + full allowlisted provider budget | Earned only after canary evidence |
 
 **Promotion is manual by default.** `mempilot policy promote` requires the canary evidence report to exist and meet the criteria (min invocations, verified effect, no adverse events). Automatic promotion is out of scope for v1 (sbh has an auto-recover-to-canary mechanism after clean windows; we may adopt it later for *recovery from fallback*, not for promotion).
@@ -221,7 +231,7 @@ So a snapshot can only ever say "this action had been authorized under a policy 
 ```jsonc
 {
   "action_id": "...",
-  "class": "RequestReclaimFromProvider",
+  "class": "RequestCooperativeRelease",
   "provider_id": "...",
   "decision_id": "...",
   "mode": "canary",

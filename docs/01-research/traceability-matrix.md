@@ -49,6 +49,11 @@ Three matrices: (A) requirement → module → schema → test; (B) reference id
 | MP-REQ-048 critical-with-no-action | `policy` | `decision` | SCN-002 B6 | proposed |
 | MP-REQ-049 single instance | `daemon` | — | ST-21 | proposed |
 | MP-REQ-050 baseline harness | `reporting` | — | Phase 5 protocol | proposed |
+| MP-REQ-051 v1 action set = contract §2 | `action` | `decision`, `action-result` | inspection + ST-2 golden list | proposed |
+| MP-REQ-052 T4 cooperative release framework (ADR-014 §1) | `providers` (registered adapters), `executor` | `decision`, `action-result` | ST-23, SCN-006 | proposed |
+| MP-REQ-053 managed-only stop (ADR-014 §2) | `executor` (`managedstop`), `daemon` (spawn bookkeeping) | `decision`, `action-result` | ST-24, ST-22 | proposed |
+| MP-REQ-054 per-class breakers/budgets (T4, managed-stop independent) | `policy` | `decision` | ST-23 (5), T-AA-4..5 | proposed |
+| MP-REQ-055 measured-verdict rule for T4/L2 (footprint+pressure, ack≠success) | `verification` | `action-result` | ST-23 (2), schema tests | proposed |
 | MP-REQ-060 ledger schema | `ledger` | `pressure-state` | schema tests | proposed |
 | MP-REQ-061 retention | `ledger` | — | FI-4, retention test | proposed |
 | MP-REQ-062 status | `cmd/mempilot` | `state-file` | snapshot | proposed |

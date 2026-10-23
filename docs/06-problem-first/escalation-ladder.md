@@ -18,8 +18,9 @@ Two orthogonal axes. Confusing them is how products either act too early or too 
 **Severity selects the eligible tiers; the tier's own default still applies.** A high severity never unlocks a tier that the user has not enabled.
 
 ```
-severity L4  ──eligible──►  T1, T2, T5        (T3 if opted in, T4 if a provider exists)
-severity L5  ──eligible──►  T1, T2, T5, T3*   (*only if the user enabled T3 for that class)
+severity L4  ──eligible──►  T1, T2, T5, L2†   (T3 if opted in; T4 for enabled adapters)
+                              † L2 only for owned, pre-authorized workloads
+severity L5  ──eligible──►  T1, T2, T5, T3*, L2†   (*only if the user enabled T3 for that class)
 ```
 
 Raising severity **never** overrides `T3 = off`. If it did, the opt-in would mean nothing.
@@ -78,7 +79,8 @@ Raising severity **never** overrides `T3 = off`. If it did, the opt-in would mea
 |---|---|---|
 | Its own buffers, history, log | ✅ always | small effect; must never be presented as relief for the system |
 | Verified orphan processes | ⚠️ only with evidence | detect + recommend by default |
-| Cooperative app release | ❌ no API known | tier T4 is empty |
+| Cooperative app release | ⚠️ only registered adapters | framework shipped (ADR-014); no default adapter |
+| Stop an owned, pre-authorized workload | ✅ if managed | L2: only for `mp run` spawns with `--allow-stop` |
 | Kernel reclaim (purge-style) | ❌ rejected | no measured benefit; plausible cost (ADR-006) |
 
 **What mp does.**
@@ -108,10 +110,11 @@ Raising severity **never** overrides `T3 = off`. If it did, the opt-in would mea
 
 | Path | Requires |
 |---|---|
-| Ask the app to reduce (T4) | a verified provider — **none today** |
+| Ask the app to reduce (T4) | an **enabled, registered adapter** with a measured effect — none ships by default |
 | Recommend closing a **resumable** session (T5) | an adapter confirming the resume mechanism; the core alone must not claim resumability |
 | Recommend killing a specific session (T5) | nothing — but the advice must state that work will be lost |
-| Terminate a verified orphan (T3 act) | explicit user opt-in for that class |
+| Terminate a verified orphan (T3 act) | explicit user opt-in for that class — **no executor code path in v1** (ADR-013) |
+| Stop an owned, pre-authorized managed workload (L2) | managed `mp run` spawn + `--allow-stop`; identity revalidates; canary-gated (ADR-014 §2) |
 
 **What mp must not do.**
 - **Pause or freeze** a process as a general remedy. It does not release memory, and it destroys responsiveness — the worst of both (see ADR-012 rationale, still valid).

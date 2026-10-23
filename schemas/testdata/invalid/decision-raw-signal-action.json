@@ -1,0 +1,14 @@
+{
+  "v": 1,
+  "id": "dec-bad2",
+  "mode": "enforce",
+  "required_mode": "enforce",
+  "candidates": [
+    {"action": "Kill", "expected_effect_bytes": [100, 200], "cost": 0.1, "risk": 0.1}
+  ],
+  "chosen": {"action": "Kill"},
+  "no_action_reason": null,
+  "refused": [],
+  "policy_snapshot": {"mode": "enforce", "allowlist": [], "rate_limits": {}},
+  "created_at": "2026-10-23T12:17:00Z"
+}

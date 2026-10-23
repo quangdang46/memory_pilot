@@ -1,0 +1,22 @@
+{
+  "v": 1,
+  "action_id": "act-20261023T120000-9a8b",
+  "decision_id": "dec-20261023T115959-3c4d",
+  "class": "RequestCooperativeRelease",
+  "provider_id": null,
+  "mode": "canary",
+  "preconditions": [
+    {
+      "name": "adapter_registered",
+      "ok": false,
+      "observed": "no adapter for class batch-tool"
+    }
+  ],
+  "duration_ms": null,
+  "outcome": "refused",
+  "refusal_reason": "adapter_missing",
+  "expected_effect_bytes": null,
+  "verification": {
+    "verdict": "unverified"
+  }
+}

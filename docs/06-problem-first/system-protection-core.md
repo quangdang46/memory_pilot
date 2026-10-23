@@ -165,7 +165,8 @@ The decisive part. Actions are grouped by **what could break**, not by what they
 | **T1** | Shrink our own memory and logs | nothing | **always allowed** | none |
 | **T2** | Defer / warn at a **managed launch point** | nothing (the launch has not happened) | automatic at that point | the launch went through us |
 | **T3** | Terminate a **verified orphan** | possibly a long-running detached task | only with explicit opt-in + per-process evidence | full orphan verification (§4.3) |
-| **T4** | Ask an application to release memory | depends on the app honoring it | only with opt-in, canary-gated | a documented app API exists |
+| **T4** | Ask a **registered** application adapter to release memory | depends on the app honoring it | only with per-integration opt-in, canary-gated | an adapter is registered and enabled |
+| **L2-managed** | Stop a workload the daemon spawned via `mp run` | that workload ends early | canary-gated, pre-authorized per launch | identity revalidates |
 | **T5** | Ask the user to act | nothing | always allowed | none |
 
 `T2` and `T5` are new relative to the previous spec and are where most of the product's actual effect lives.
@@ -191,9 +192,13 @@ All of the following, recorded in the decision:
 
 Even then it is a *recommendation* unless the user has opted into automatic handling for that class.
 
-### 4.4 Why T4 remains empty
+### 4.4 Why T4 ships as a framework with no default adapter (ADR-014)
 
-No general macOS API lets a third party request heap release from another process. Without a documented per-app API, T4 has nothing to call. It stays as an extension point (`protection-actions.md` §5), not a promise.
+No general macOS API lets a third party request heap release from another process — that claim is unchanged and is why T4 has **no universal path**. What ADR-014 changed: T4 now ships as a *registered-adapter framework*, so an app with a documented release API can be integrated explicitly, with measurement and its own breaker. An app without one stays `unsupported` and gets a T5 advisory. The framework makes the capability per-app honest; it does not make it universal.
+
+### 4.4b L2-managed stop, and why suspend is not there
+
+The daemon may stop a workload **it spawned** through `mp run` when the user pre-authorized stop for that launch and the identity still revalidates. This is the only signal path in the binary (ADR-014 §2, SI-1b). Suspend is deliberately absent: freezing a process does not free its RAM, so it fails the provider bar — it would stop work without relieving pressure.
 
 ### 4.5 T5 is not a failure
 
@@ -205,9 +210,10 @@ Asking the user is a legitimate outcome, and in a well-designed report it is oft
 
 | Not done | Because |
 |---|---|
-| Terminate/suspend/pause a process it did not spawn, except T3 with opt-in | work loss |
-| Reset or resume paused applications | does not address the cause |
-| Suppress the macOS out-of-memory dialog | no public API; hiding symptoms |
+| Terminate/suspend/pause a process it did not spawn and the user did not pre-authorize, except T3 with opt-in (no code path in v1) | work loss |
+| Suspend a managed workload as relief | suspend is not in v1; it freezes work without a measured memory drop (ADR-014) |
+| Reset the OOM dialog by force | no public API; hiding symptoms |
+| Ask an unregistered app to release memory | no such path — `unsupported`, then T5 advisory |
 | Reserve RAM in advance to "release later" | reserving reduces headroom; net zero |
 | Move another process's heap | pointer graph belongs to that process |
 | Assume an application's identity to make decisions | the whole point of this document |

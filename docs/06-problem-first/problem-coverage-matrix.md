@@ -124,7 +124,7 @@ Three mechanisms are available to a user-space daemon that does not control othe
 |---|---|---|---|
 | **A. Admission control** | refuse/defer *starting* new sessions when the forecast says they don't fit | **large, immediate, certain** | the user launches sessions through a managed entry point |
 | **B. Session lifecycle guidance** | tell the user which idle sessions to close, and how to resume them | large when followed | agent supports resumption |
-| **C. Cooperative release** | ask an app to release memory | small/unknown | an app API that does not appear to exist |
+| **C. Cooperative release** | ask a **registered** app adapter to release memory | small/unknown, per app | ADR-014 framework; no default adapter; `unsupported` → T5 |
 | **D. Orphan reaping** | end processes whose owner is provably gone | moderate, rare | very high evidence bar; policy change |
 
 The current spec has **none** of A, B, or D, and correctly rejects C.

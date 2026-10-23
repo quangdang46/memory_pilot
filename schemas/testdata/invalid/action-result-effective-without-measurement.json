@@ -2,7 +2,7 @@
   "v": 1,
   "action_id": "act-z",
   "decision_id": "dec-z",
-  "class": "RequestReclaimFromProvider",
+  "class": "RequestCooperativeRelease",
   "provider_id": "prov-bar",
   "mode": "canary",
   "preconditions": [],

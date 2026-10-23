@@ -11,7 +11,7 @@ Each invariant lists: the claim, why it exists, how it is *mechanically* enforce
 
 ## SI-1 — No signaling of non-owned processes
 
-**Claim.** No code path in the shipped binary can send a signal (including SIGSTOP/SIGCONT/SIGTERM/SIGKILL), call `proc_terminate`, `launchctl kill`, `task_terminate`, or `SetPriorityClass`-style suspension to any process other than one the daemon itself spawned.
+**Claim.** No code path in the shipped binary can send a signal (including SIGSTOP/SIGCONT/SIGTERM/SIGKILL), call `proc_terminate`, `launchctl kill`, `task_terminate`, or `SetPriorityClass`-style suspension to any process other than one the daemon itself spawned **and the user pre-authorized for stop** (ADR-014 §2).
 
 ### SI-1a — The exact boundary, stated plainly
 
@@ -22,18 +22,9 @@ Two different commitments are often conflated. This product makes the **narrow o
 | Never *coerce* another process: no signal, no suspend, no freeze, no terminate, no restart, no priority/QoS change without consent | **Yes — SI-1, absolute** |
 | Never *influence* another process at all, including by calling an API it offers | **No — not the commitment we make** |
 
-A cooperative provider would mean: an application publishes a documented API ("release caches", "trim buffers"), the user enables that integration explicitly, and the daemon calls it. The app decides what to release; nothing is taken from it, and if it declines, nothing happens.
+A cooperative provider means: an application publishes a documented API ("release caches", "trim buffers"), the user enables that integration explicitly, and the daemon calls it. The app decides what to release; nothing is taken from it, and if it declines, nothing happens. **Since ADR-014, v1 ships this as a real framework** with all adapters off by default, bounded by registration + measurement + canary (requirements in `protection-actions.md` §4, enforcement in ST-23).
 
-**However, v1 ships no cooperative provider** (ADR-006, ADR-011b). The capability exists in the architecture so a future provider does not require redesign; it does not exist in the binary.
-
-**Requirements if a cooperative provider is ever added:**
-1. Explicit per-integration user opt-in — never on by default, never inferred.
-2. The app's API must be public and documented by that app's vendor.
-3. The provider must declare a measured `EffectRange` and a verification method.
-4. It runs in `canary` before `enforce`.
-5. It must be revocable at runtime without restarting the daemon.
-
-**Why this distinction matters:** if the product's promise were "never influence anything", the entire provider abstraction would be dishonest architecture. If the promise is "never coerce", the architecture is coherent and the v1 emptiness is a staging decision, not a contradiction.
+**Why this distinction matters:** if the product's promise were "never influence anything", the entire provider abstraction would be dishonest architecture. If the promise is "never coerce", the architecture is coherent and the framework-with-no-default-adapters is a staging decision, not a contradiction.
 
 **Why.** Any such action risks destroying hours of agent work. The product exists because "just kill it" is an unacceptable answer.
 
@@ -41,11 +32,27 @@ A cooperative provider would mean: an application publishes a documented API ("r
 1. The executor's action type is a **closed sum type** containing only relief actions (cache purge requests *through the owning API*, log rotation of our own logs, memory-pressure advisory emission). There is no `Signal`/`Kill`/`Suspend` variant to construct.
 2. Platform layer exposes no signal-sending wrapper. Where a syscall binding package would otherwise be imported, it is not linked.
 3. `internal/actionguard` is the only package importing `os/exec`; it rejects any argument vector matching a signal-sending shape, and is tested against an explicit denylist.
-4. Static analysis gate: a build-time check scanning the compiled dependency graph and source for `syscall.Kill`, `unix.Kill`, `SIGSTOP`, `SIGKILL`, `proc_terminate`, `task_terminate` in non-test code. The gate fails the build.
+4. Static analysis gate: a build-time check scanning the compiled dependency graph and source for `syscall.Kill`, `unix.Kill`, `SIGSTOP`, `SIGKILL`, `proc_terminate`, `task_terminate` in non-test code. **Exactly one call site is allowlisted** — `internal/executor/managedstop.go:stopOwnedChild`, which accepts only `OwnedPid` and only after identity revalidation (ADR-014 §2). Any other occurrence, or a raw-PID variant, fails the build.
 
-**Test:** `../05-testing/safety-tests.md` ST-1 (static), ST-2 (type-level), ST-3 (runtime deny on crafted config).
+**Test:** `../05-testing/safety-tests.md` ST-1 (static), ST-2 (type-level), ST-24 (L2 managed-stop boundaries), ST-3 (runtime deny on crafted config).
 
-**Deliberate consequence.** Even a future user-requested "kill this process for me" command would violate SI-1 — it would have to be a separate binary, or SI-1 would have to be renegotiated in an ADR with the user. Keeping it out of this artifact is the point.
+**Deliberate consequence.** Even a user-requested "kill this process for me" command on an **unowned** process would violate SI-1 — it would have to be a separate binary, or SI-1 would have to be renegotiated in an ADR with the user. Keeping it out of this artifact is the point. (ADR-014's `StopManagedWorkload` is not that command: it is confined to processes the daemon itself spawned under prior authorization.)
+
+## SI-1b — The one legal signal (ADR-014, L2-managed)
+
+**Claim.** `StopManagedWorkload` is the **only** action in the binary that may address a signal to another PID, and it is legal only for an `OwnedPid`: a process the daemon spawned through a managed launch point, for which the user gave prior stop authorization, and whose identity (`pid, start_sec, start_usec` + still-our-child) revalidates at execute time.
+
+**Why.** This is the narrowest possible R-capability for the specific problem "an agent session we started has grown and the machine is about to die". Its target set is closed by construction, not by policy.
+
+**Mechanically enforced by:**
+1. `OwnedPid` is a distinct type constructible only from the managed-set record (spawn bookkeeping), never from a bare `int32`.
+2. One call site (`internal/executor/managedstop.go:stopOwnedChild`), allowlisted in ST-1; any other signal primitive fails the build.
+3. Preconditions re-read at execute: managed-set membership, prior authorization record, identity tuple, parentage. Any failure ⇒ `refused`, no signal.
+4. No `Suspend*` variant exists in the action sum type (golden test, ST-2/ST-24).
+
+**Test:** ST-24 (boundaries: non-managed target, PID reuse, pre-authorization absent, heavy child left behind), ST-22 (unchanged: with no authorization, the forbidden scenario still yields zero signals).
+
+**Not admitted:** L3 (allowlist terminate of non-owned), L4 (automatic CRITICAL intervention), suspend-as-relief. These have no code path; enabling any requires a new ADR under `../00-product/v1-scope-contract.md` §5.
 
 ---
 

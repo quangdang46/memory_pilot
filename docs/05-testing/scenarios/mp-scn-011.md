@@ -10,7 +10,7 @@ Trace: `escalation-full` — pressure climbs normal → watch → prevent → cr
 | L2 | At L2, admission control becomes active and defers a launch that would not fit |
 | L3 | At L3, orphan candidates are listed and the report states plainly if nothing safe is reclaimable |
 | L4 | At L4, the dominant grower is named with the three relief numbers |
-| L5 | At L5 with no safe path, the output is an explicit decision point — **zero automatic terminations** |
+| L5 | At L5 with no safe path, the output is an explicit decision point — **zero automatic terminations of non-owned processes** (L2 may stop only a pre-authorized *owned* workload, and only in `canary`+ with its breaker closed; ST-22 covers the no-authorization case) |
 | L6 | **Same-tick response:** every tick at L2+ produces either an action or a recorded `no_action_reason`; no tick is silent |
 | L7 | When the collector degrades mid-way, the severity **does not de-escalate** on the missing data (SI-4) |
 | L8 | De-escalation honors the dwell times (5/5/5/15 min) and does not flap |

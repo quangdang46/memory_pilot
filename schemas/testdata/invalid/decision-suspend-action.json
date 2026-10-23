@@ -1,0 +1,14 @@
+{
+  "v": 1,
+  "id": "dec-bad",
+  "mode": "canary",
+  "required_mode": "canary",
+  "candidates": [
+    {"action": "SuspendManagedWorkload", "expected_effect_bytes": [100, 200], "cost": 0.1, "risk": 0.1}
+  ],
+  "chosen": {"action": "SuspendManagedWorkload"},
+  "no_action_reason": null,
+  "refused": [],
+  "policy_snapshot": {"mode": "canary", "allowlist": [], "rate_limits": {}},
+  "created_at": "2026-10-23T12:16:00Z"
+}

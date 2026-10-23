@@ -19,7 +19,9 @@ proc_terminate, task_terminate, task_suspend, launchctl kill, pkill, killall
 os.Process.Kill, exec.Command("kill"|...)
 ```
 
-Allowlist: the daemon may send `SIGTERM` **to itself** during shutdown — that is `os.Interrupt` handling, not `Process.Kill`. The scan must distinguish self-signaling by construction, not by file path.
+Allowlist (exactly two, both by construction — never by file path):
+1. the daemon may send `SIGTERM` **to itself** during shutdown (`os.Interrupt` handling);
+2. `internal/executor/managedstop.go:stopOwnedChild` — the ADR-014 L2 path — which accepts only the `OwnedPid` type (constructible solely from a managed-launch record) and runs only after identity revalidation. The scan must fail if this function's parameter is ever widened to a raw PID type, and must fail on any additional occurrence.
 
 **Implementation:** a `go test` that greps the AST of every package (not string grep, to reduce false negatives from obfuscation like `syscall.Syscall(37, ...)`), plus a check of `go list -deps` for process-control packages.
 
@@ -140,14 +142,50 @@ Assert:
 
 This is the flagship safety test. If it ever fails, the product has lost its reason to exist.
 
+**ADR-014 note:** the workload process in this scenario is **not** MP-spawned and carries **no** stop authorization, so the L2 path is ineligible here. ST-22 must stay green *unmodified* after ADR-014; if enabling the L2 code makes it fail, the target-set construction is broken.
+
 ---
 
-## 7. Checklist for reviewers
+## 7. Narrow-intervention paths (ADR-014)
+
+### ST-23 — Cooperative release (T4) boundaries
+
+Harness: a spy adapter (records every call) plus fixtures for each condition.
+
+Assert:
+1. No adapter registered for the target class ⇒ decision records `unsupported`, **zero** adapter calls, and a T5 advisory is emitted instead.
+2. Adapter returns "ok" with no measurable drop in the window ⇒ verdict `ineffective` (never `succeeded`); breaker progress incremented.
+3. Breaker open for the `cooperative-release` class ⇒ `refused(breaker_open)`, zero adapter calls.
+4. Repeated `ineffective` ⇒ backoff doubles per occurrence, capped at 24 h (constants §5).
+5. A T4 breaker opening does **not** block T2 deferral or T5 advisories (separate classes).
+6. Adapter call exceeds the timeout ⇒ `timed_out`, never success; attempt count bounded (≤ 2 per decision, ≥ 5 min apart).
+
+### ST-24 — Managed-workload stop (L2) boundaries
+
+Harness: a stub managed launch that records spawn bookkeeping; assertions run with a fake signal recorder.
+
+Assert:
+1. Stop request for a PID **not** in the managed set ⇒ `refused(precondition: managed_set)`, no signal.
+2. Managed PID but **no prior authorization** ⇒ `refused(precondition: authorization)`, no signal.
+3. Simulated PID reuse (same pid, different `start_sec/start_usec`) ⇒ `refused(precondition: identity)`, no signal.
+4. Reparented process (daemon no longer parent) ⇒ `refused(precondition: identity)`, no signal.
+5. Authorized stop that leaves a child holding > 10 MB ⇒ verdict `partial`, not `effective`.
+6. Authorized stop with measurable reclaim ⇒ verdict `effective` only with window measurement recorded.
+7. Golden type test: no `Suspend*` variant exists in the action sum type; `OwnedPid` is never constructible from an `int`.
+8. Mode `observe` ⇒ planning only, `refused(mode_insufficient)`, no signal.
+
+### ST-22 stays the floor
+
+Neither ST-23 nor ST-24 may relax ST-22. A build where ST-22 fails but ST-23/24 pass is a release blocker.
+
+---
+
+## 8. Checklist for reviewers
 
 Before approving a PR that touches actions, platform, or store:
 
 - [ ] Did the action type grow? If so, is there a spec + ADR?
-- [ ] Does any new code path reach a syscall that could affect another process?
+- [ ] Does any new code path reach a syscall that could affect another process? (Only `StopManagedWorkload`/`stopOwnedChild` may; a second one is an ADR-level change, not a PR.)
 - [ ] Are new caches bounded?
 - [ ] Does any new output path bypass the schema (e.g. hand-built JSON)?
 - [ ] Do the safety tests still pass **unmodified**? (Modifying them requires justification in the PR.)

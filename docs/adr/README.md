@@ -66,3 +66,4 @@ The conditions that would make us reopen this.
 | [011](011-no-heap-migration.md) | Rejecting transparent heap migration / SSD-as-RAM | **Rejected (firm)** |
 | [012](012-no-process-kill-capability.md) | No process control capability in the product | Accepted (firm) |
 | [013](013-action-policy-revision.md) | Action policy revision: tiers and orphan handling | Accepted (v1 scope only) |
+| [014](014-narrow-intervention.md) | Narrow intervention: T4 cooperative-release framework + L2 managed stop | Accepted |

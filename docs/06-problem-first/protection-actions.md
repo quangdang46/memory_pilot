@@ -17,8 +17,9 @@ The replacement is a **tiered system ordered by what each tier can break**, not 
 |---|---|---|
 | T1 — own memory | nothing | **on** |
 | T2 — managed launch points | nothing | **on** |
-| T3 — verified orphan termination | a detached long-running task | **off** (per-user opt-in) |
-| T4 — cooperative app release | depends on the app | **off** (nothing to call) |
+| T2-managed — owned-workload stop | a managed workload ends early | **on, but per-launch authorized only** |
+| T3 — verified orphan termination | a detached long-running task | **off** (per-user opt-in); `act` has no executor code path |
+| T4 — cooperative app release | depends on the app honoring it | **framework on; every adapter off** until enabled |
 | T5 — ask the user | nothing | **on** |
 
 ---
@@ -128,17 +129,49 @@ Every one of these, recorded in the decision record:
 
 ---
 
-## 4. T4 — Cooperative app release
+## 4. T4 — Cooperative app release (framework, ADR-014)
 
-Reserved for a documented API from an application that lets another process ask it to shrink. **No such API is known for any target application today.** The tier exists so a future integration does not require an architectural change; it ships empty.
+**Changed in ADR-014:** T4 is no longer empty. It ships as a **registered-adapter framework** — not a promise to release any app's memory.
 
-Requirements if ever populated:
+| | |
+|---|---|
+| Action | `RequestCooperativeRelease` (renamed from the retired `RequestReclaimFromProvider`) |
+| Who decides what to free | **the application**, behind its own documented API |
+| What the daemon does | registers the adapter, sends a bounded request, waits, measures |
+| Can break | depends on the app honoring it; nothing is taken from it |
+| Default | adapter off until the user enables that integration |
 
-1. Documented, public API — no private/undocumented interfaces.
-2. Explicit per-integration opt-in.
-3. Measured `EffectRange` and a verification method.
-4. Canary before enforce.
-5. Revocable at runtime.
+Requirements (all binding; ADR-014 §1 has the full list):
+
+1. Documented, public vendor API — no private/undocumented interfaces.
+2. Explicit per-integration opt-in, revocable at runtime.
+3. Declared `EffectRange` **source** — a prior measurement, cited; no measurement ⇒ `StatusUnproven`, cannot run outside `observe`.
+4. One request timeout (30 s default), max 2 attempts, ≥ 5 min apart. A timeout is `timed_out`, never success.
+5. **Own** rate-limit and breaker class (`cooperative-release`) — a T4 breaker never blocks T2/T5.
+6. `effective | partial | ineffective` only with `window_s` + `observed_effect_bytes`; compare `phys_footprint` where available **and** system pressure state — RSS alone is not the metric.
+7. Adapter acknowledgement without a measured drop ⇒ `ineffective` (never `success`); repeated `ineffective` ⇒ breaker opens.
+8. `canary` before `enforce`; promotion per the same evidence bar as any provider.
+
+**If no adapter is registered:** the decision records `unsupported`, and the tier falls back to T5 advisory. There is no generic "ask any app" path, and no claim of universal release — no such macOS API exists.
+
+---
+
+## 2.5 L2-managed — Stop an owned workload (ADR-014)
+
+**Narrow, new in ADR-014.** The only path in v1 that signals another process. It is legal only inside SI-1's "process the daemon itself spawned" carve-out, and only with prior authorization.
+
+| | |
+|---|---|
+| Action | `StopManagedWorkload` (no `SuspendManagedWorkload` in v1 — suspend frees no measured RAM) |
+| Target | a process the daemon spawned through `mp run` |
+| Prior authorization | per-invocation `--allow-stop`, or a recorded class policy for that managed launch type |
+| Identity check | `(pid, start_sec, start_usec)` must still resolve, **and** the daemon must still be the parent |
+| Verification | 60 s window: process exited, RSS reclaimed, no child holding > 10 MB (else verdict `partial`) |
+| Breaker | own class (`managed-stop`), same backoff shape as T4 |
+
+**Refusal conditions** (all recorded): target not in the managed set; no prior authorization; identity mismatch or reparenting (PID reuse defense); breaker open; mode insufficient. A refusal costs no budget (action-authorization §6.1).
+
+
 
 ---
 
@@ -174,7 +207,9 @@ pressure rises
    │
    ├─ T3 candidates listed (detect), recommended     (if T3 enabled at all)
    │
-   └─ T4 only if a verified provider exists          (empty today)
+   ├─ T4 request to registered adapters              (only for enabled integrations)
+   │
+   └─ L2 stop of an owned, pre-authorized workload   (only inside the managed set)
 ```
 
 Multiple tiers may fire in one incident. Each records its own outcome and its own verification. **The report must distinguish which tier produced which effect** — otherwise a 40 MB self-trim gets credited with averting a 2 GB crisis.
@@ -188,7 +223,8 @@ Multiple tiers may fire in one incident. Each records its own outcome and its ow
 | T1 | own RSS delta | our footprint fell; says nothing about system pressure |
 | T2 | the launch did/did not happen; pressure trajectory afterwards | we prevented an allocation; the counterfactual is unobservable and must be described as such |
 | T3 | pressure before/after + the orphan's footprint returned | pressure fell **and** no complaint from a live session within a window |
-| T4 | provider-declared measurement | provider reports a measured release |
+| T4 | measurement in the adapter's window: `phys_footprint` Δ (where available) + system pressure state | a measured drop, not a provider saying "ok" |
+| L2 | 60 s window: exit status, RSS reclaimed, children checked | process gone **and** its memory returned **and** no heavy child remains |
 | T5 | user action observed (session count fell, or pressure fell) | we can at best observe correlation, never causation |
 
 **T2's success is structurally unprovable** — you cannot measure the crisis that did not happen. The right response is to report it as `prevented (counterfactual, unobservable)` rather than claiming a measured effect. This distinction belongs in the ledger and in the report.
@@ -199,7 +235,8 @@ Multiple tiers may fire in one incident. Each records its own outcome and its ow
 
 | Not possible | Consequence |
 |---|---|
-| Force any app to release heap | T4 stays empty; RC-4 unsolvable from outside |
-| Stop a running process from allocating | only T3 (destroys work) or nothing |
+| Force **any** app to release heap | only registered adapters can be asked; unregistered apps fall back to T5 advisory (RC-4 partially solvable, per-app) |
+| Stop a **non-managed** running process from allocating | only T3 `act` (destroys work, no code path in v1) or nothing |
+| Relieve RAM by suspending a process | suspend is not in v1; it freezes work without a measured memory drop |
 | Guarantee no OOM ever | the honest ceiling; stated in the charter |
 | Prevent launches outside managed points | T2 coverage limit |

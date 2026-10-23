@@ -4,14 +4,14 @@
   "mode": "canary",
   "required_mode": "canary",
   "candidates": [
-    {"action": "RequestReclaimFromProvider", "provider_id": "prov-foo", "expected_effect_bytes": [100000000, 400000000], "cost": 0.3, "risk": 0.1}
+    {"action": "RequestCooperativeRelease", "provider_id": "prov-foo", "expected_effect_bytes": [100000000, 400000000], "cost": 0.3, "risk": 0.1}
   ],
-  "chosen": {"action": "RequestReclaimFromProvider", "provider_id": "prov-foo"},
+  "chosen": {"action": "RequestCooperativeRelease", "provider_id": "prov-foo"},
   "no_action_reason": null,
   "refused": [],
   "policy_snapshot": {
     "mode": "canary",
-    "allowlist": ["TrimOwnBuffers", "RotateOwnLedger", "EmitAdvisory", "RequestReclaimFromProvider"],
+    "allowlist": ["TrimOwnBuffers", "RotateOwnLedger", "EmitAdvisory", "RequestCooperativeRelease"],
     "rate_limits": {"provider_min_interval_s": 900, "provider_hourly_cap": 2}
   },
   "created_at": "2026-10-23T10:30:00Z"

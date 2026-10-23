@@ -189,7 +189,7 @@ Conventions:
   "id": "dec-20261023T103000-7f3a",
   "mode": "observe",
   "input_refs": {"state_id": "...", "forecast_id": "...", "attribution_id": "..."},
-  "candidates": [{"action": "RequestReclaimFromProvider", "provider_id": "...",
+  "candidates": [{"action": "RequestCooperativeRelease", "provider_id": "...",
                   "expected_effect_bytes": [1e8, 4e8], "cost": 0.3, "risk": 0.1}],
   "chosen": null,
   "no_action_reason": "no_safe_relief",   // present when chosen is null
@@ -211,7 +211,7 @@ Conventions:
   "v": 1,
   "action_id": "...",
   "decision_id": "...",
-  "class": "RequestReclaimFromProvider",
+  "class": "RequestCooperativeRelease",
   "provider_id": "...",
   "mode": "canary",
   "preconditions": [{"name": "no_protected_group_affected", "ok": true, "observed": "..."}],

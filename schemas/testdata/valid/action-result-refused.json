@@ -2,7 +2,7 @@
   "v": 1,
   "action_id": "act-20261023T110000-4e5f",
   "decision_id": "dec-20261023T105959-0a1b",
-  "class": "RequestReclaimFromProvider",
+  "class": "RequestCooperativeRelease",
   "provider_id": "prov-foo",
   "mode": "observe",
   "preconditions": [

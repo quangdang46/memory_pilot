@@ -54,10 +54,11 @@ A record with an empty *What this does NOT prove* is treated as overclaiming and
 
 | Artifact | State | Record |
 |---|---|---|
-| `schemas/validate.py` over 30 fixtures | **Compiled/tested** (Python on the dev host, not macOS-specific) | `2026-10-23-schema-validation-r1.md` |
+| `schemas/validate.py` over 35 fixtures | **Compiled/tested** (Python on the dev host, not macOS-specific) | `2026-10-23-schema-validation-r2.md` |
 | SCN-007..011 | **Designed** | none — no harness exists |
 | IT-11 (core builds and runs with adapters disabled) | **Designed** | none — no Go source tree exists |
 | ST-1/ST-2 (build scans for termination primitives) | **Designed** | none — the build they gate does not exist yet |
+| ST-23 / ST-24 (ADR-014 T4 + L2 boundaries) | **Designed** | none — harnesses and implementation do not exist |
 | Pressure decoding, swap layout, identity tuple | **Verified on macOS** (during the reference-audit phase, against the two reference repos' code and Apple headers — see `../01-research/reference-audit-macos-telemetry.md`) | recorded in that audit's file:line evidence, not in a run record |
 
 ## 4. What unblocks each pending state

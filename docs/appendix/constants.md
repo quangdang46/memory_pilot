@@ -122,6 +122,12 @@ Column **Tags** uses the convention from `../README.md`: `P` = provisional, `V` 
 | action intent fsync | before every perform | P |
 | unresolved intents at startup | counted as `unknown_crash_window`, charge budget | P |
 | canary promotion evidence | ≥ 20 invocations, no adverse events, verified effect | P |
+| cooperative request timeout | 30 s | P |
+| cooperative attempts per decision | ≤ 2, ≥ 5 min apart | P |
+| cooperative breaker class | `cooperative-release` (independent) | P |
+| managed-stop breaker class | `managed-stop` (independent) | P |
+| managed-stop verification window | 60 s | P |
+| managed-stop residual-child threshold | > 10 MB ⇒ `partial` | P |
 
 ---
 

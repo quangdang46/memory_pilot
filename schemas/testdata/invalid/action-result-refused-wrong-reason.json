@@ -1,0 +1,12 @@
+{
+  "v": 1,
+  "action_id": "act-bad",
+  "decision_id": "dec-bad",
+  "class": "StopManagedWorkload",
+  "provider_id": null,
+  "mode": "canary",
+  "preconditions": [],
+  "outcome": "refused",
+  "refusal_reason": "i_changed_my_mind",
+  "verification": {"verdict": "unverified"}
+}
