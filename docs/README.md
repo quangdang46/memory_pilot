@@ -1,6 +1,6 @@
 # Memory Pilot — Specification Set
 
-**Status:** specification phase (no implementation yet)
+**Status:** implementation phases 0–5 built (see ../execution-records/); validation phases calendar-bound
 **Version:** 0.1.0 · 2026-10-23
 
 Memory Pilot is a macOS daemon that **prevents** memory exhaustion for long-running coding-agent workloads by measuring pressure correctly, forecasting it, attributing growth to workloads, and relieving pressure only through mechanisms proven safe — with **no ability to kill, pause, or suspend the user's processes**.

@@ -2,7 +2,7 @@
 
 **A macOS daemon that prevents memory exhaustion for long-running coding-agent workloads — without ever killing your work.**
 
-> Status: **specification phase.** No implementation code yet. This repository currently contains a complete, evidence-tagged specification set in [`docs/`](docs/README.md).
+> Status: **implementation, phases 0–5 built.** Phase 0 spikes measured on the target Mac mini M4 (G-P0 closed); the skeleton, platform collectors, ledger, IPC, pressure model, forecasting, attribution, classification, policy/executor safety surface, and CLI are implemented with ST-1..ST-24 green (G-P1..G-P5 recorded; see `execution-records/`). Remaining are calendar-bound validations (24h run, 72h soak, 7-day baseline, canary) and the owner freeze. The specification set lives in [`docs/`](docs/README.md).
 
 ---
 
