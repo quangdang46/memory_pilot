@@ -1,6 +1,6 @@
 # ADR-004 — Adaptive sampling schedule and its floors
 
-**Status:** Proposed
+**Status:** Verified (Phase 0 evidence: `spike/mach/NOTES.md` + `spike/footprint/NOTES.md` S-5, 2026-10-23 — measured per-PID cost ~1–3 µs; N=600 cycle 0.68–1.5 ms ⇒ ≈0.03 % of one core at 5 s cadence, ~20× under the budget arithmetic)
 **Date:** 2026-10-23
 **Related:** MP-REQ-010, `../05-testing/performance-budget.md` §2
 

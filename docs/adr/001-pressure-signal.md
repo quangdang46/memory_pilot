@@ -1,6 +1,6 @@
 # ADR-001 — Memory-Pressure Signal: Hybrid (dispatch events + kernel level + polling)
 
-**Status:** Proposed
+**Status:** Verified (Phase 0 evidence: `spike/mach/NOTES.md` S-1, `spike/pressure/NOTES.md` S-3, 2026-10-23)
 **Date:** 2026-10-23
 **Related:** MP-REQ-003, MP-REQ-004, MP-REQ-005, `../02-architecture/macos-integration.md`
 
@@ -16,7 +16,7 @@ We need to know, promptly and honestly, when the machine's memory situation chan
 | `DISPATCH_SOURCE_TYPE_MEMORYPRESSURE` | "Tell me when it changes" | event-driven | ~0 when idle | Public Apple API; requires dispatch |
 | Sampling `vm_stat`/`host_statistics64` | "What are the raw numbers?" | one poll interval | ~10 µs | Always |
 
-sbh uses all three: dispatch events wake the loop, `kern.memorystatus_vm_pressure_level` provides the authoritative level (decoding **XNU dispatch masks 1/2/4**, not a 0-based enum — `pal.rs:496-504`), and `vm_stat` numbers feed the derived fallback when the level is unreadable.
+sbh uses all three: dispatch events wake the loop, `kern.memorystatus_vm_pressure_level` provides the authoritative level (decoding **XNU dispatch masks 1/2/4**, not a 0-based enum — verified empirically on the target Mac mini M4 (S-3): `kern.memorystatus_vm_pressure_level` returned 2 (WARN) throughout +12 GB induced load while `kern.memorystatus_level` sat in its warning band; any value outside {1,2,4} decodes to UNKNOWN (never calm). Host VM stats come from `host_statistics64(HOST_VM_INFO64=4, rev1 count=38)` — pure-Go via purego, no cgo (S-1)., and `vm_stat` numbers feed the derived fallback when the level is unreadable.
 
 ---
 

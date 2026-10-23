@@ -1,6 +1,6 @@
 # Constants & Defaults
 
-**Status:** provisional — every value here is a starting point, not a measurement.
+**Status:** provisional — every value here is a starting point, not a measurement. Phase 0 (2026-10-23) added measured entries below; those carry tag `V (S-1..S-7)` with the spike note as source.
 **Rule:** once code exists, this table must be **generated from the code** and a test must fail when it is stale (the pattern sbh uses for its "Runtime Constants" table). Until then, this is the single source of truth and other docs cite it rather than restating numbers.
 
 Column **Tags** uses the convention from `../README.md`: `P` = provisional, `V` = verified against a reference implementation, `O` = open (must be measured before use).
@@ -11,7 +11,7 @@ Column **Tags** uses the convention from `../README.md`: `P` = provisional, `V` 
 
 | Constant | Value | Tag | Notes |
 |---|---|---|---|
-| `kernel_level` decode | 1→Normal, 2→Prevent, 4→Critical | V (sbh) | all other values ⇒ unavailable |
+| `kernel_level` decode | 1→Normal, 2→Warn, 4→Critical (dispatch masks) | V (S-3) | measured on target Mac mini M4: WARN=2 observed across +12 GB induced load; all other values ⇒ unavailable (fail-safe) |
 | `WATCH_TREND_THRESHOLD` | 0.35 (score contribution) | P | re-derive from traces |
 | fallback `F_C` (free % critical) | 2.0 | P | sbh disk-tool value; **do not inherit silently** |
 | fallback `F_P` (free % prevent) | 5.0 | P | same |
@@ -24,6 +24,19 @@ Column **Tags** uses the convention from `../README.md`: `P` = provisional, `V` 
 | `D_ref` (disk free % reference) | 15 | P | |
 | hysteresis | 5 percentage points free %, or 1 level for kernel state | P | |
 | `min_dwell` | 15 s (escalation to Critical: 0) | P | |
+
+### 1a. Measured Phase 0 baselines (2026-10-23, target Mac mini M4)
+
+| Constant | Measured value | Tag | Source |
+|---|---|---|---|
+| per-PID sampling cost | `proc_pidinfo(TASKINFO)` ≈ 2.4–2.9 µs; `proc_pid_rusage(V4)` ≈ 1.1 µs | V (S-5) | spike/footprint/NOTES.md |
+| N=600 full-cycle sampling cost | 0.68–1.5 ms ⇒ ≈ 0.03 % of one core at 5 s cadence | V (S-5) | spike/footprint/NOTES.md |
+| footprint source | `rusage_info_v4.ri_phys_footprint` (matches Activity Monitor "Memory"; resident-size paths agree 389/389 within 1 MB) | V (S-7) | spike/footprint/NOTES.md |
+| empty-daemon idle RSS | 3.0–3.7 MB steady, max 4.9 MB (budget 60 MB) | V (S-4) | spike/daemon-idle/NOTES.md |
+| empty-daemon idle CPU | ≈ 0.003 % of one core (0.01 s over 307 s; budget 0.3 %) | V (S-4) | spike/daemon-idle/NOTES.md |
+| cgo requirement | none — mach/BSD calls work pure-Go (purego, CGO_ENABLED=0) | V (S-1) | spike/mach/NOTES.md |
+| cgo dispatch latency | not applicable — no cgo bridge in the design | V (S-2, N/A) | spike/mach/NOTES.md |
+| purge-style relief | REJECTED for v1: root-gated; kernel auto-evicts file cache under pressure | V (S-6) | spike/purge/NOTES.md |
 
 ---
 

@@ -1,6 +1,6 @@
 # ADR-002 — Per-process memory metric source
 
-**Status:** Proposed
+**Status:** Verified (Phase 0 evidence: `spike/footprint/NOTES.md` S-5/S-7, 2026-10-23)
 **Date:** 2026-10-23
 **Related:** MP-REQ-006, MP-REQ-008, `../03-algorithms/telemetry-model.md` §3
 

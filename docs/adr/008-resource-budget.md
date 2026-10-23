@@ -1,6 +1,6 @@
 # ADR-008 — Daemon resource budget
 
-**Status:** Proposed — numbers are targets pending measurement
+**Status:** Verified (Phase 0 evidence: `spike/daemon-idle/NOTES.md` S-4, 2026-10-23 — empty-daemon baseline 3–5 MB RSS, ≈0.003 % CPU on the target Mac mini M4; budgets have a measured denominator)
 **Date:** 2026-10-23
 **Related:** `../05-testing/performance-budget.md`, MP-REQ-070..074
 
