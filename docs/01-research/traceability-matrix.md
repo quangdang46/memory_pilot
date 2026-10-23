@@ -3,69 +3,71 @@
 **Status:** Draft — rows are added as requirements are implemented; a requirement absent here is unowned.
 **Version:** 0.1.0
 
-Three matrices: (A) requirement → module → test; (B) reference idea → classification → destination; (C) conversation claim → verification status.
+Three matrices: (A) requirement → module → schema → test; (B) reference idea → classification → destination; (C) conversation claim → verification status.
+
+**Schema column:** names the file in `schemas/` that machine-checks the contract, or `—` where the object is not yet schematised (tracked in checklist gate G3).
 
 ---
 
-## A. Requirements → module → test
+## A. Requirements → module → schema → test
 
-| Req | Module | Test(s) | Status |
-|---|---|---|---|
-| MP-REQ-001 VM stats | `platform/macos`, `collector` | IT-1, T-PE-1 | proposed |
-| MP-REQ-002 swap | `platform/macos` | IT-1 | proposed |
-| MP-REQ-003 kernel level decode | `platform/macos` | unit (1/2/4/other), IT-3 | proposed |
-| MP-REQ-004 dispatch events | `platform/macos` (cgo bridge) | IT-2 | proposed |
-| MP-REQ-005 polling fallback | `platform/macos` | FI-12, IT-3 | proposed |
-| MP-REQ-006 process inventory | `platform/macos` | IT-4 | proposed |
-| MP-REQ-007 disk headroom | `platform/macos` | unit + IT-1 | proposed |
-| MP-REQ-008 process I/O (opt) | `platform/macos` | IT-4 | proposed |
-| MP-REQ-009 metric quality | `model`, `collector` | schema tests | proposed |
-| MP-REQ-010 adaptive cadence | `collector` | ADR-004 tests, soak | proposed |
-| MP-REQ-011 no defaults | all collectors | FI-1 | proposed |
-| MP-REQ-020 pressure state precedence | `pressure` | T-PE-1..4 | proposed |
-| MP-REQ-021 EWMA rate | `forecast` | T-FC-1..2 | proposed |
-| MP-REQ-022 ETA + confidence | `forecast` | T-FC-1..6 | proposed |
-| MP-REQ-023 burst detection | `forecast` | T-FC-7 | proposed |
-| MP-REQ-024 conformal calibration | `forecast` | T-FC-8..9 | proposed |
-| MP-REQ-025 no bare forecasts | `model` schema | ST-16 | proposed |
-| MP-REQ-026 drift guardrail | `forecast` | T-FC-9 | proposed |
-| MP-REQ-030 delta ranking | `attribution` | T-AT-2 | proposed |
-| MP-REQ-031 grouping | `workload` | T-AT-5 | proposed |
-| MP-REQ-032 coverage | `attribution` | T-AT-6 | proposed |
-| MP-REQ-033 classification buckets | `leaksuspect` | T-LK-1..5 | proposed |
-| MP-REQ-034 alternatives | `leaksuspect` | ST-16, T-LK-6 | proposed |
-| MP-REQ-035 repeat episodes | `leaksuspect` | T-LK-8 | proposed |
-| MP-REQ-036 group attribution | `workload` | SCN-002 B3 | proposed |
-| MP-REQ-040 no signaling | whole binary | ST-1, ST-22 | proposed |
-| MP-REQ-041 closed action type | `action` | ST-2 | proposed |
-| MP-REQ-042 provider contract | `providers` | providertest | proposed |
-| MP-REQ-043 verification | `verification` | ST-10 | proposed |
-| MP-REQ-044 rate limits | `policy` | ST-8, T-AA-4..5 | proposed |
-| MP-REQ-045 policy modes | `policy` | T-AA-1..7 | proposed |
-| MP-REQ-046 auto-demotion | `policy`, `supervisor` | ST-9, FI-2 | proposed |
-| MP-REQ-047 user policy | `config`, `policy` | T-PP-1..5 | proposed |
-| MP-REQ-048 critical-with-no-action | `policy` | SCN-002 B6 | proposed |
-| MP-REQ-049 single instance | `daemon` | ST-21 | proposed |
-| MP-REQ-050 baseline harness | `reporting` | Phase 5 protocol | proposed |
-| MP-REQ-060 ledger schema | `ledger` | schema tests | proposed |
-| MP-REQ-061 retention | `ledger` | FI-4, retention test | proposed |
-| MP-REQ-062 status | `cmd/mempilot` | snapshot | proposed |
-| MP-REQ-063 report | `reporting` | SCN-005 | proposed |
-| MP-REQ-064 explain | `reporting` | SCN-004 D2 | proposed |
-| MP-REQ-065 doctor | `cmd/mempilot` | doctor matrix | proposed |
-| MP-REQ-066 policy CLI | `cmd/mempilot` | round-trip | proposed |
-| MP-REQ-067 forecast CLI | `cmd/mempilot` | schema | proposed |
-| MP-REQ-068 JSON everywhere | `cmd/*` | schema suite | proposed |
-| MP-REQ-069 IPC security | `ipc` | IT-7 | proposed |
-| MP-REQ-070..072 budgets | `selfmonitor` | perf bench | proposed |
-| MP-REQ-073 startup | `daemon` | timing test | proposed |
-| MP-REQ-074 soak | — | 72 h soak | proposed |
-| MP-REQ-075 crash-only | `daemon`, `ledger` | FI-3, FI-14 | proposed |
-| MP-REQ-076 no network | build gate | ST-4 | proposed |
-| MP-REQ-077 config | `config` | FI-7 | proposed |
-| MP-REQ-078 migration | `ledger` | FI-8 | proposed |
-| MP-REQ-079 build | build | inspection | proposed |
-| MP-REQ-080 no root | `service` | IT-6 | proposed |
+| Req | Module | Schema | Test(s) | Status |
+|---|---|---|---|---|
+| MP-REQ-001 VM stats | `platform/macos`, `collector` | — | IT-1, T-PE-1 | proposed |
+| MP-REQ-002 swap | `platform/macos` | — | IT-1 | proposed |
+| MP-REQ-003 kernel level decode | `platform/macos` | — | unit (1/2/4/other), IT-3 | proposed |
+| MP-REQ-004 dispatch events | `platform/macos` (cgo bridge) | — | IT-2 | proposed |
+| MP-REQ-005 polling fallback | `platform/macos` | — | FI-12, IT-3 | proposed |
+| MP-REQ-006 process inventory | `platform/macos` | — | IT-4 | proposed |
+| MP-REQ-007 disk headroom | `platform/macos` | — | unit + IT-1 | proposed |
+| MP-REQ-008 process I/O (opt) | `platform/macos` | — | IT-4 | proposed |
+| MP-REQ-009 metric quality | `model`, `collector` | `common` | schema tests | proposed |
+| MP-REQ-010 adaptive cadence | `collector` | — | ADR-004 tests, soak | proposed |
+| MP-REQ-011 no defaults | all collectors | — | FI-1 | proposed |
+| MP-REQ-020 pressure state precedence | `pressure` | `pressure-state` | T-PE-1..4 | proposed |
+| MP-REQ-021 EWMA rate | `forecast` | — | T-FC-1..2 | proposed |
+| MP-REQ-022 ETA + confidence | `forecast` | `forecast` | T-FC-1..6 | proposed |
+| MP-REQ-023 burst detection | `forecast` | — | T-FC-7 | proposed |
+| MP-REQ-024 conformal calibration | `forecast` | `forecast` | T-FC-8..9 | proposed |
+| MP-REQ-025 no bare forecasts | `model` schema | `forecast` | ST-16 | proposed |
+| MP-REQ-026 drift guardrail | `forecast` | `forecast` | T-FC-9 | proposed |
+| MP-REQ-030 delta ranking | `attribution` | — | T-AT-2 | proposed |
+| MP-REQ-031 grouping | `workload` | — | T-AT-5 | proposed |
+| MP-REQ-032 coverage | `attribution` | `attribution` | T-AT-6 | proposed |
+| MP-REQ-033 classification buckets | `leaksuspect` | `classification` | T-LK-1..5 | proposed |
+| MP-REQ-034 alternatives | `leaksuspect` | `classification` | ST-16, T-LK-6 | proposed |
+| MP-REQ-035 repeat episodes | `leaksuspect` | — | T-LK-8 | proposed |
+| MP-REQ-036 group attribution | `workload` | — | SCN-002 B3 | proposed |
+| MP-REQ-040 no signaling | whole binary | — | ST-1, ST-22 | proposed |
+| MP-REQ-041 closed action type | `action` | `action-result` | ST-2 | proposed |
+| MP-REQ-042 provider contract | `providers` | `action-result` | providertest | proposed |
+| MP-REQ-043 verification | `verification` | `action-result` | ST-10 | proposed |
+| MP-REQ-044 rate limits | `policy` | `decision` | ST-8, T-AA-4..5 | proposed |
+| MP-REQ-045 policy modes | `policy` | `decision` | T-AA-1..7 | proposed |
+| MP-REQ-046 auto-demotion | `policy`, `supervisor` | `decision` | ST-9, FI-2 | proposed |
+| MP-REQ-047 user policy | `config`, `policy` | — | T-PP-1..5 | proposed |
+| MP-REQ-048 critical-with-no-action | `policy` | `decision` | SCN-002 B6 | proposed |
+| MP-REQ-049 single instance | `daemon` | — | ST-21 | proposed |
+| MP-REQ-050 baseline harness | `reporting` | — | Phase 5 protocol | proposed |
+| MP-REQ-060 ledger schema | `ledger` | `pressure-state` | schema tests | proposed |
+| MP-REQ-061 retention | `ledger` | — | FI-4, retention test | proposed |
+| MP-REQ-062 status | `cmd/mempilot` | `state-file` | snapshot | proposed |
+| MP-REQ-063 report | `reporting` | `attribution` | SCN-005 | proposed |
+| MP-REQ-064 explain | `reporting` | — | SCN-004 D2 | proposed |
+| MP-REQ-065 doctor | `cmd/mempilot` | `state-file` | doctor matrix | proposed |
+| MP-REQ-066 policy CLI | `cmd/mempilot` | — | round-trip | proposed |
+| MP-REQ-067 forecast CLI | `cmd/mempilot` | — | schema | proposed |
+| MP-REQ-068 JSON everywhere | `cmd/*` | — | schema suite | proposed |
+| MP-REQ-069 IPC security | `ipc` | — | IT-7 | proposed |
+| MP-REQ-070..072 budgets | `selfmonitor` | — | perf bench | proposed |
+| MP-REQ-073 startup | `daemon` | — | timing test | proposed |
+| MP-REQ-074 soak | — | — | 72 h soak | proposed |
+| MP-REQ-075 crash-only | `daemon`, `ledger` | — | FI-3, FI-14 | proposed |
+| MP-REQ-076 no network | build gate | — | ST-4 | proposed |
+| MP-REQ-077 config | `config` | — | FI-7 | proposed |
+| MP-REQ-078 migration | `ledger` | — | FI-8 | proposed |
+| MP-REQ-079 build | build | — | inspection | proposed |
+| MP-REQ-080 no root | `service` | — | IT-6 | proposed |
 
 ---
 
