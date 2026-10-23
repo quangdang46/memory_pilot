@@ -22,11 +22,15 @@ func TestKernelDecode(t *testing.T) {
 	for lvl, want := range map[model.PressureLevel]State{
 		model.LevelNormal: Normal, model.LevelWarn: Prevent, model.LevelCritical: Critical,
 	} {
-		ms += 20000
-		in := base()
-		in.Sample.MonotonicMs = ms
-		in.Sample.KernelLevel = lvl
-		got := e.Update(in)
+		// first tick starts the dwell, second publishes (15s dwell, 20s ticks)
+		var got StateOut
+		for k := 0; k < 2; k++ {
+			ms += 20000
+			in := base()
+			in.Sample.MonotonicMs = ms
+			in.Sample.KernelLevel = lvl
+			got = e.Update(in)
+		}
 		if got.State != want {
 			t.Errorf("level %d: got %s want %s", lvl, got.State, want)
 		}

@@ -1,7 +1,7 @@
 {
  "name": "flap-synthetic",
  "version": 1,
- "description": "rapid normal/warn oscillation (dwell must suppress)",
+ "description": "rapid 10s normal/warn oscillation (dwell must suppress)",
  "threshold_bytes": 343597383.68,
  "samples": [
   {
@@ -27,7 +27,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 2,
+   "kernel_level": 1,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -45,7 +45,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -54,7 +54,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -63,7 +63,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 2,
+   "kernel_level": 1,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -72,7 +72,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 2,
+   "kernel_level": 1,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -90,7 +90,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -135,7 +135,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 2,
+   "kernel_level": 1,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -153,7 +153,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -162,7 +162,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -171,7 +171,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 2,
+   "kernel_level": 1,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -180,7 +180,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 2,
+   "kernel_level": 1,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -198,7 +198,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -243,7 +243,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 2,
+   "kernel_level": 1,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -261,7 +261,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -270,7 +270,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -279,7 +279,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 2,
+   "kernel_level": 1,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -288,7 +288,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 2,
+   "kernel_level": 1,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -306,7 +306,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -351,7 +351,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 2,
+   "kernel_level": 1,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -369,7 +369,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -378,7 +378,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -387,7 +387,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 2,
+   "kernel_level": 1,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -396,7 +396,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 2,
+   "kernel_level": 1,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -414,7 +414,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -459,7 +459,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 2,
+   "kernel_level": 1,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -477,7 +477,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -486,7 +486,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -495,7 +495,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 2,
+   "kernel_level": 1,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -504,7 +504,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 2,
+   "kernel_level": 1,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -522,7 +522,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -567,7 +567,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 2,
+   "kernel_level": 1,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -585,7 +585,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -594,7 +594,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -603,7 +603,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 2,
+   "kernel_level": 1,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -612,7 +612,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 2,
+   "kernel_level": 1,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -630,7 +630,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -675,7 +675,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 2,
+   "kernel_level": 1,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -693,7 +693,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -702,7 +702,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -711,7 +711,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 2,
+   "kernel_level": 1,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
@@ -720,7 +720,7 @@
    "free_bytes": 1374389534.72,
    "compressor_pages": 180000,
    "swap_used": 5000000000,
-   "kernel_level": 2,
+   "kernel_level": 1,
    "total_pages": 1048576,
    "page_bytes": 16384
   }

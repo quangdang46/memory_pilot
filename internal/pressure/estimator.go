@@ -107,8 +107,7 @@ func (e *Estimator) Update(in Input) StateOut {
 			e.candidate = out.State
 			e.candSinceS = in.Sample.MonotonicMs / 1000
 		}
-		dwelled := (in.Sample.MonotonicMs/1000-e.candSinceS) >= MinDwellS ||
-			(in.Sample.MonotonicMs/1000-e.lastChangeS) >= MinDwellS
+		dwelled := (in.Sample.MonotonicMs/1000-e.candSinceS) >= MinDwellS
 		immediate := rank(out.State) > rank(e.last) && out.State == Critical
 		if dwelled || immediate || e.last == Unknown {
 			out.Transition = &Transition{From: e.last, To: out.State, Reason: out.Provenance}

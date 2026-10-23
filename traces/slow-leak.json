@@ -1,7 +1,7 @@
 {
  "name": "slow-leak",
  "version": 1,
- "description": "linear free-memory decline, kernel normal-\u003ewarn",
+ "description": "linear free-memory decline crossing critical, kernel normal-\u003ewarn",
  "threshold_bytes": 343597383.68,
  "samples": [
   {
@@ -15,7 +15,7 @@
   },
   {
    "mono_ms": 5000,
-   "free_bytes": 5148960755.2,
+   "free_bytes": 5114300773.977698,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -24,7 +24,7 @@
   },
   {
    "mono_ms": 10000,
-   "free_bytes": 5143960755.2,
+   "free_bytes": 5083422438.222803,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -33,7 +33,7 @@
   },
   {
    "mono_ms": 15000,
-   "free_bytes": 5138960755.2,
+   "free_bytes": 5043298694.483531,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -42,7 +42,7 @@
   },
   {
    "mono_ms": 20000,
-   "free_bytes": 5133960755.2,
+   "free_bytes": 4979126292.207756,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -51,7 +51,7 @@
   },
   {
    "mono_ms": 25000,
-   "free_bytes": 5128960755.2,
+   "free_bytes": 4891633895.213188,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -60,7 +60,7 @@
   },
   {
    "mono_ms": 30000,
-   "free_bytes": 5123960755.2,
+   "free_bytes": 4799905765.011117,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -69,7 +69,7 @@
   },
   {
    "mono_ms": 35000,
-   "free_bytes": 5118960755.2,
+   "free_bytes": 4731888538.283627,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -78,7 +78,7 @@
   },
   {
    "mono_ms": 40000,
-   "free_bytes": 5113960755.2,
+   "free_bytes": 4707425209.784118,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -87,7 +87,7 @@
   },
   {
    "mono_ms": 45000,
-   "free_bytes": 5108960755.2,
+   "free_bytes": 4723812001.903195,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -96,7 +96,7 @@
   },
   {
    "mono_ms": 50000,
-   "free_bytes": 5103960755.2,
+   "free_bytes": 4753245179.73967,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -105,7 +105,7 @@
   },
   {
    "mono_ms": 55000,
-   "free_bytes": 5098960755.2,
+   "free_bytes": 4755163245.696815,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -114,7 +114,7 @@
   },
   {
    "mono_ms": 60000,
-   "free_bytes": 5093960755.2,
+   "free_bytes": 4697836762.74726,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -123,7 +123,7 @@
   },
   {
    "mono_ms": 65000,
-   "free_bytes": 5088960755.2,
+   "free_bytes": 4577571980.870904,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -132,7 +132,7 @@
   },
   {
    "mono_ms": 70000,
-   "free_bytes": 5083960755.2,
+   "free_bytes": 4424235349.010114,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -141,7 +141,7 @@
   },
   {
    "mono_ms": 75000,
-   "free_bytes": 5078960755.2,
+   "free_bytes": 4288669476.070703,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -150,7 +150,7 @@
   },
   {
    "mono_ms": 80000,
-   "free_bytes": 5073960755.2,
+   "free_bytes": 4217429165.997504,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -159,7 +159,7 @@
   },
   {
    "mono_ms": 85000,
-   "free_bytes": 5068960755.2,
+   "free_bytes": 4227717171.03745,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -168,7 +168,7 @@
   },
   {
    "mono_ms": 90000,
-   "free_bytes": 5063960755.2,
+   "free_bytes": 4296141772.029192,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -177,7 +177,7 @@
   },
   {
    "mono_ms": 95000,
-   "free_bytes": 5058960755.2,
+   "free_bytes": 4368205663.14793,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -186,7 +186,7 @@
   },
   {
    "mono_ms": 100000,
-   "free_bytes": 5053960755.2,
+   "free_bytes": 4384622015.129538,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -195,7 +195,7 @@
   },
   {
    "mono_ms": 105000,
-   "free_bytes": 5048960755.2,
+   "free_bytes": 4311375738.54134,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -204,7 +204,7 @@
   },
   {
    "mono_ms": 110000,
-   "free_bytes": 5043960755.2,
+   "free_bytes": 4157941702.3415265,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -213,7 +213,7 @@
   },
   {
    "mono_ms": 115000,
-   "free_bytes": 5038960755.2,
+   "free_bytes": 3973796819.4381876,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -222,7 +222,7 @@
   },
   {
    "mono_ms": 120000,
-   "free_bytes": 5033960755.2,
+   "free_bytes": 3824470623.390889,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -231,7 +231,7 @@
   },
   {
    "mono_ms": 125000,
-   "free_bytes": 5028960755.2,
+   "free_bytes": 3759065770.7641964,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -240,7 +240,7 @@
   },
   {
    "mono_ms": 130000,
-   "free_bytes": 5023960755.2,
+   "free_bytes": 3785770549.77104,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -249,7 +249,7 @@
   },
   {
    "mono_ms": 135000,
-   "free_bytes": 5018960755.2,
+   "free_bytes": 3867885719.9242344,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -258,7 +258,7 @@
   },
   {
    "mono_ms": 140000,
-   "free_bytes": 5013960755.2,
+   "free_bytes": 3942349391.8260694,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -267,7 +267,7 @@
   },
   {
    "mono_ms": 145000,
-   "free_bytes": 5008960755.2,
+   "free_bytes": 3951189619.0615964,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -276,7 +276,7 @@
   },
   {
    "mono_ms": 150000,
-   "free_bytes": 5003960755.2,
+   "free_bytes": 3869819007.164568,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -285,7 +285,7 @@
   },
   {
    "mono_ms": 155000,
-   "free_bytes": 4998960755.2,
+   "free_bytes": 3717970516.707997,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -294,7 +294,7 @@
   },
   {
    "mono_ms": 160000,
-   "free_bytes": 4993960755.2,
+   "free_bytes": 3548259817.6940265,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -303,7 +303,7 @@
   },
   {
    "mono_ms": 165000,
-   "free_bytes": 4988960755.2,
+   "free_bytes": 3418918824.880407,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -312,7 +312,7 @@
   },
   {
    "mono_ms": 170000,
-   "free_bytes": 4983960755.2,
+   "free_bytes": 3365091288.802153,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -321,7 +321,7 @@
   },
   {
    "mono_ms": 175000,
-   "free_bytes": 4978960755.2,
+   "free_bytes": 3383222882.3492255,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -330,7 +330,7 @@
   },
   {
    "mono_ms": 180000,
-   "free_bytes": 4973960755.2,
+   "free_bytes": 3435693459.786419,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -339,7 +339,7 @@
   },
   {
    "mono_ms": 185000,
-   "free_bytes": 4968960755.2,
+   "free_bytes": 3472076765.175662,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -348,7 +348,7 @@
   },
   {
    "mono_ms": 190000,
-   "free_bytes": 4963960755.2,
+   "free_bytes": 3455067334.3563766,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -357,7 +357,7 @@
   },
   {
    "mono_ms": 195000,
-   "free_bytes": 4958960755.2,
+   "free_bytes": 3377476653.0242043,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -366,7 +366,7 @@
   },
   {
    "mono_ms": 200000,
-   "free_bytes": 4953960755.2,
+   "free_bytes": 3262307728.2489505,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -375,7 +375,7 @@
   },
   {
    "mono_ms": 205000,
-   "free_bytes": 4948960755.2,
+   "free_bytes": 3147399292.321636,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -384,7 +384,7 @@
   },
   {
    "mono_ms": 210000,
-   "free_bytes": 4943960755.2,
+   "free_bytes": 3064184462.495385,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -393,7 +393,7 @@
   },
   {
    "mono_ms": 215000,
-   "free_bytes": 4938960755.2,
+   "free_bytes": 3022459224.8531475,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -402,7 +402,7 @@
   },
   {
    "mono_ms": 220000,
-   "free_bytes": 4933960755.2,
+   "free_bytes": 3008756264.8167877,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -411,7 +411,7 @@
   },
   {
    "mono_ms": 225000,
-   "free_bytes": 4928960755.2,
+   "free_bytes": 2997735839.1405597,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -420,7 +420,7 @@
   },
   {
    "mono_ms": 230000,
-   "free_bytes": 4923960755.2,
+   "free_bytes": 2968732025.651935,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -429,7 +429,7 @@
   },
   {
    "mono_ms": 235000,
-   "free_bytes": 4918960755.2,
+   "free_bytes": 2917289811.783228,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -438,7 +438,7 @@
   },
   {
    "mono_ms": 240000,
-   "free_bytes": 4913960755.2,
+   "free_bytes": 2855256918.784948,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -447,7 +447,7 @@
   },
   {
    "mono_ms": 245000,
-   "free_bytes": 4908960755.2,
+   "free_bytes": 2800311336.0787387,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -456,7 +456,7 @@
   },
   {
    "mono_ms": 250000,
-   "free_bytes": 4903960755.2,
+   "free_bytes": 2762268342.7525463,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -465,7 +465,7 @@
   },
   {
    "mono_ms": 255000,
-   "free_bytes": 4898960755.2,
+   "free_bytes": 2735294034.336913,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -474,7 +474,7 @@
   },
   {
    "mono_ms": 260000,
-   "free_bytes": 4893960755.2,
+   "free_bytes": 2701266956.818942,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -483,7 +483,7 @@
   },
   {
    "mono_ms": 265000,
-   "free_bytes": 4888960755.2,
+   "free_bytes": 2642371748.405798,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -492,7 +492,7 @@
   },
   {
    "mono_ms": 270000,
-   "free_bytes": 4883960755.2,
+   "free_bytes": 2554935245.8966866,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -501,7 +501,7 @@
   },
   {
    "mono_ms": 275000,
-   "free_bytes": 4878960755.2,
+   "free_bytes": 2455272335.4313183,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -510,7 +510,7 @@
   },
   {
    "mono_ms": 280000,
-   "free_bytes": 4873960755.2,
+   "free_bytes": 2372803315.2350497,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -519,7 +519,7 @@
   },
   {
    "mono_ms": 285000,
-   "free_bytes": 4868960755.2,
+   "free_bytes": 2333416233.5008607,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -528,7 +528,7 @@
   },
   {
    "mono_ms": 290000,
-   "free_bytes": 4863960755.2,
+   "free_bytes": 2342438733.9213586,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -537,7 +537,7 @@
   },
   {
    "mono_ms": 295000,
-   "free_bytes": 4858960755.2,
+   "free_bytes": 2377721204.695192,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -546,7 +546,7 @@
   },
   {
    "mono_ms": 300000,
-   "free_bytes": 4853960755.2,
+   "free_bytes": 2398224283.857717,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -555,7 +555,7 @@
   },
   {
    "mono_ms": 305000,
-   "free_bytes": 4848960755.2,
+   "free_bytes": 2364790372.4005156,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -564,7 +564,7 @@
   },
   {
    "mono_ms": 310000,
-   "free_bytes": 4843960755.2,
+   "free_bytes": 2262344133.215662,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -573,7 +573,7 @@
   },
   {
    "mono_ms": 315000,
-   "free_bytes": 4838960755.2,
+   "free_bytes": 2111004787.9222274,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -582,7 +582,7 @@
   },
   {
    "mono_ms": 320000,
-   "free_bytes": 4833960755.2,
+   "free_bytes": 1958861745.2123113,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -591,7 +591,7 @@
   },
   {
    "mono_ms": 325000,
-   "free_bytes": 4828960755.2,
+   "free_bytes": 1858884098.1503048,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -600,7 +600,7 @@
   },
   {
    "mono_ms": 330000,
-   "free_bytes": 4823960755.2,
+   "free_bytes": 1841383448.2370214,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -609,7 +609,7 @@
   },
   {
    "mono_ms": 335000,
-   "free_bytes": 4818960755.2,
+   "free_bytes": 1896600519.4701328,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -618,7 +618,7 @@
   },
   {
    "mono_ms": 340000,
-   "free_bytes": 4813960755.2,
+   "free_bytes": 1977321089.4362297,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -627,7 +627,7 @@
   },
   {
    "mono_ms": 345000,
-   "free_bytes": 4808960755.2,
+   "free_bytes": 2021164215.5963545,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -636,7 +636,7 @@
   },
   {
    "mono_ms": 350000,
-   "free_bytes": 4803960755.2,
+   "free_bytes": 1981692941.761544,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -645,7 +645,7 @@
   },
   {
    "mono_ms": 355000,
-   "free_bytes": 4798960755.2,
+   "free_bytes": 1852437622.7076979,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -654,7 +654,7 @@
   },
   {
    "mono_ms": 360000,
-   "free_bytes": 4793960755.2,
+   "free_bytes": 1671169955.8843246,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -663,7 +663,7 @@
   },
   {
    "mono_ms": 365000,
-   "free_bytes": 4788960755.2,
+   "free_bytes": 1501785663.7621758,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -672,7 +672,7 @@
   },
   {
    "mono_ms": 370000,
-   "free_bytes": 4783960755.2,
+   "free_bytes": 1402747162.54037,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -681,7 +681,7 @@
   },
   {
    "mono_ms": 375000,
-   "free_bytes": 4778960755.2,
+   "free_bytes": 1398089939.2913606,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -690,7 +690,7 @@
   },
   {
    "mono_ms": 380000,
-   "free_bytes": 4773960755.2,
+   "free_bytes": 1465748895.7912636,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -699,7 +699,7 @@
   },
   {
    "mono_ms": 385000,
-   "free_bytes": 4768960755.2,
+   "free_bytes": 1549037996.0043242,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -708,7 +708,7 @@
   },
   {
    "mono_ms": 390000,
-   "free_bytes": 4763960755.2,
+   "free_bytes": 1585205511.1452985,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -717,7 +717,7 @@
   },
   {
    "mono_ms": 395000,
-   "free_bytes": 4758960755.2,
+   "free_bytes": 1536337816.144893,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -726,7 +726,7 @@
   },
   {
    "mono_ms": 400000,
-   "free_bytes": 4753960755.2,
+   "free_bytes": 1406978389.4034326,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -735,7 +735,7 @@
   },
   {
    "mono_ms": 405000,
-   "free_bytes": 4748960755.2,
+   "free_bytes": 1240013447.2005734,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -744,7 +744,7 @@
   },
   {
    "mono_ms": 410000,
-   "free_bytes": 4743960755.2,
+   "free_bytes": 1093733554.280751,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -753,25 +753,25 @@
   },
   {
    "mono_ms": 415000,
-   "free_bytes": 4738960755.2,
+   "free_bytes": 1012477102.6024325,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
   {
    "mono_ms": 420000,
-   "free_bytes": 4733960755.2,
+   "free_bytes": 1005992936.4383692,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
   {
    "mono_ms": 425000,
-   "free_bytes": 4728960755.2,
+   "free_bytes": 1047433333.4563956,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -780,7 +780,7 @@
   },
   {
    "mono_ms": 430000,
-   "free_bytes": 4723960755.2,
+   "free_bytes": 1089759961.4945717,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -789,7 +789,7 @@
   },
   {
    "mono_ms": 435000,
-   "free_bytes": 4718960755.2,
+   "free_bytes": 1090858773.3225641,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -798,7 +798,7 @@
   },
   {
    "mono_ms": 440000,
-   "free_bytes": 4713960755.2,
+   "free_bytes": 1033798820.1908213,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
    "kernel_level": 1,
@@ -807,280 +807,280 @@
   },
   {
    "mono_ms": 445000,
-   "free_bytes": 4708960755.2,
+   "free_bytes": 932199008.7784715,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
   {
    "mono_ms": 450000,
-   "free_bytes": 4703960755.2,
+   "free_bytes": 819298800.0547268,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
   {
    "mono_ms": 455000,
-   "free_bytes": 4698960755.2,
+   "free_bytes": 728124448.097654,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
   {
    "mono_ms": 460000,
-   "free_bytes": 4693960755.2,
+   "free_bytes": 674312382.4590861,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
   {
    "mono_ms": 465000,
-   "free_bytes": 4688960755.2,
+   "free_bytes": 650681220.3576432,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
   {
    "mono_ms": 470000,
-   "free_bytes": 4683960755.2,
+   "free_bytes": 635295657.6543088,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
   {
    "mono_ms": 475000,
-   "free_bytes": 4678960755.2,
+   "free_bytes": 606945644.7899857,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
   {
    "mono_ms": 480000,
-   "free_bytes": 4673960755.2,
+   "free_bytes": 558147198.8341604,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
   {
    "mono_ms": 485000,
-   "free_bytes": 4668960755.2,
+   "free_bytes": 497960755.1999998,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
   {
    "mono_ms": 490000,
-   "free_bytes": 4663960755.2,
+   "free_bytes": 443583984.53306323,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
   {
    "mono_ms": 495000,
-   "free_bytes": 4658960755.2,
+   "free_bytes": 406712522.5049785,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
   {
    "mono_ms": 500000,
-   "free_bytes": 4653960755.2,
+   "free_bytes": 383849124.7551489,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
   {
    "mono_ms": 505000,
-   "free_bytes": 4648960755.2,
+   "free_bytes": 357197835.8201319,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
   {
    "mono_ms": 510000,
-   "free_bytes": 4643960755.2,
+   "free_bytes": 306056194.7442614,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
   {
    "mono_ms": 515000,
-   "free_bytes": 4638960755.2,
+   "free_bytes": 221783030.31038368,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
   {
    "mono_ms": 520000,
-   "free_bytes": 4633960755.2,
+   "free_bytes": 116664640.08466065,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
   {
    "mono_ms": 525000,
-   "free_bytes": 4628960755.2,
+   "free_bytes": 50000000,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
   {
    "mono_ms": 530000,
-   "free_bytes": 4623960755.2,
+   "free_bytes": 50000000,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
   {
    "mono_ms": 535000,
-   "free_bytes": 4618960755.2,
+   "free_bytes": 50000000,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
   {
    "mono_ms": 540000,
-   "free_bytes": 4613960755.2,
+   "free_bytes": 50000000,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
   {
    "mono_ms": 545000,
-   "free_bytes": 4608960755.2,
+   "free_bytes": 50000000,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
   {
    "mono_ms": 550000,
-   "free_bytes": 4603960755.2,
+   "free_bytes": 50000000,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
   {
    "mono_ms": 555000,
-   "free_bytes": 4598960755.2,
+   "free_bytes": 50000000,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
   {
    "mono_ms": 560000,
-   "free_bytes": 4593960755.2,
+   "free_bytes": 50000000,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
   {
    "mono_ms": 565000,
-   "free_bytes": 4588960755.2,
+   "free_bytes": 50000000,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
   {
    "mono_ms": 570000,
-   "free_bytes": 4583960755.2,
+   "free_bytes": 50000000,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
   {
    "mono_ms": 575000,
-   "free_bytes": 4578960755.2,
+   "free_bytes": 50000000,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
   {
    "mono_ms": 580000,
-   "free_bytes": 4573960755.2,
+   "free_bytes": 50000000,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
   {
    "mono_ms": 585000,
-   "free_bytes": 4568960755.2,
+   "free_bytes": 50000000,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
   {
    "mono_ms": 590000,
-   "free_bytes": 4563960755.2,
+   "free_bytes": 50000000,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   },
   {
    "mono_ms": 595000,
-   "free_bytes": 4558960755.2,
+   "free_bytes": 50000000,
    "compressor_pages": 150000,
    "swap_used": 4000000000,
-   "kernel_level": 1,
+   "kernel_level": 2,
    "total_pages": 1048576,
    "page_bytes": 16384
   }

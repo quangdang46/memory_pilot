@@ -28,6 +28,13 @@ func mk(name, desc string, n int, f gen) replay.Trace {
 
 func clampMin(v, lo float64) float64 { return math.Max(lo, v) }
 
+// dnoise: deterministic pseudo-noise in [-1,1] (no math/rand: corpus must be
+// byte-identical across machines and Go versions).
+func dnoise(i int) float64 {
+	x := float64(i%97) / 97.0
+	return math.Sin(x*2*math.Pi) * math.Sin(float64(i)*0.7)
+}
+
 func main() {
 	out := "."
 	if len(os.Args) > 1 {
@@ -40,8 +47,9 @@ func main() {
 		mk("steady-normal", "stable machine, kernel normal throughout", 60, func(i int) replay.TraceSample {
 			return s(i, 0.25*totalPages*pageBytes, 100000, 0, 1)
 		}),
-		mk("slow-leak", "linear free-memory decline, kernel normal->warn", 120, func(i int) replay.TraceSample {
-			free := clampMin(0.3*totalPages*pageBytes-float64(i)*5e6, 0.5e8)
+		mk("slow-leak", "linear free-memory decline crossing critical, kernel normal->warn", 120, func(i int) replay.TraceSample {
+			free := 0.3*totalPages*pageBytes - float64(i)*4.8e7 + dnoise(i)*2e8
+			free = clampMin(free, 0.5e8)
 			lvl := int64(1)
 			if free < 0.06*totalPages*pageBytes {
 				lvl = 2
@@ -87,7 +95,7 @@ func main() {
 			return s(i, 0.2*totalPages*pageBytes, float64(100000+i*2000), 3e9, 1)
 		}),
 		mk("swap-runaway", "swap grows superlinearly, free collapsing", 100, func(i int) replay.TraceSample {
-			free := clampMin(0.15*totalPages*pageBytes-float64(i*i)*2e5, 0.3e8)
+			free := clampMin(0.15*totalPages*pageBytes-float64(i*i)*2e5+dnoise(i)*1.5e8, 0.3e8)
 			return s(i, free, 300000, float64(i)*2e8, 2)
 		}),
 		mk("recovery-after-critical", "critical then full recovery", 100, func(i int) replay.TraceSample {
@@ -97,9 +105,9 @@ func main() {
 			}
 			return s(i, free, 250000, 8e9, lvl)
 		}),
-		mk("flap-synthetic", "rapid normal/warn oscillation (dwell must suppress)", 80, func(i int) replay.TraceSample {
+		mk("flap-synthetic", "rapid 10s normal/warn oscillation (dwell must suppress)", 80, func(i int) replay.TraceSample {
 			lvl := int64(1)
-			if (i/3)%2 == 0 {
+			if (i/2)%2 == 0 {
 				lvl = 2
 			}
 			return s(i, 0.08*totalPages*pageBytes, 180000, 5e9, lvl)

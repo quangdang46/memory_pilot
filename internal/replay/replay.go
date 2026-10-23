@@ -82,7 +82,11 @@ func toEstimatorInput(s TraceSample) pressure.Input {
 	in.Sample.PageBytes = s.PageBytes
 	in.Sample.FreePages = uint64(s.FreeBytes / float64(s.PageBytes))
 	in.Sample.CompressorPages = uint64(s.CompressorPg)
-	if s.KernelLevel == 0 {
+	if s.KernelLevel == 0 && s.FreeBytes == 0 && s.SwapUsed == 0 {
+		// corpus convention: all-zero row = all sources missing (SI-4 Unknown)
+		in.Sample.MachStatsQuality = "missing"
+		in.Sample.KernelLevelQuality = "missing"
+	} else if s.KernelLevel == 0 {
 		in.Sample.MachStatsQuality = "good"
 		in.Sample.KernelLevelQuality = "missing"
 	} else {
