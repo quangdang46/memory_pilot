@@ -81,6 +81,18 @@ This prevents the worst admission bug: confidently refusing a lightweight comman
 
 **Rule: uncertainty never causes a refusal.** A launcher that blocks on ignorance is indistinguishable from a broken launcher.
 
+### 3.4 Unknown estimate at high severity
+
+The rule above holds even at L4/L5. An `unknown` class estimate does not become a reason to defer just because the system is already under pressure — that would punish the exact moment (many new short-lived tool calls) where blocking on ignorance is most damaging. Instead, severity changes what accompanies the admit, not whether it happens:
+
+| Severity | `estimate: unknown` behavior |
+|---|---|
+| L1–L2 | `ADMIT_WITH_WARNING`, warning is informational |
+| L3 | `ADMIT_WITH_WARNING`, warning states current headroom and the trend explicitly |
+| L4–L5 | `ADMIT_WITH_WARNING`, warning is the most prominent line in the output, and the event is flagged for calibration review regardless of outcome |
+
+The only thing that can turn an unknown-estimate launch into `DEFER` is headroom itself failing a known-estimate guard (§3.3) on a *different* basis — e.g., current headroom already below the critical floor from the collector, independent of the class estimate. Unknown never substitutes for "known to be too large."
+
 ---
 
 ## 4. The decision

@@ -15,6 +15,8 @@ ADR-012 forbids a general kill capability: *no terminating a process because it 
 
 If a future reader finds this contradictory: the contradiction is resolved in `protection-actions.md` §3 — the tier is *detect + recommend on, act off*.
 
+**Designed vs compiled, stated precisely (see ADR-013's ADR-012 clarification):** this document, the decision schema, and the policy layer may all describe and reason about `RequestGracefulQuit` and `TerminateVerifiedOrphan` — that is "designed". None of that makes the capability exist in the shipped binary. The v1 executor has no function that sends a signal to another process; there is no code path to compile out, because it was never written in. ST-1/ST-2 (`safety-invariants.md` §4) scan the dependency graph and source for termination primitives and fail the build if one appears outside test code — so "designed but not compiled" is a build-verifiable claim, not a policy promise. Flipping a class from `act: off` to `act: on` requires writing that executor code for the first time, under a separate ADR amendment backed by measured false-positive data (ADR-013 §Revisit triggers) — it is not a config flag on existing code.
+
 ---
 
 ## 1. The pipeline

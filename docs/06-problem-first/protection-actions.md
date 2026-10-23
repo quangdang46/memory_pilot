@@ -124,6 +124,8 @@ Every one of these, recorded in the decision record:
 
 **v1 ships `detect` + `recommend` only.** `act` requires ADR-013 to be amended with real false-positive data from the owner's machine.
 
+**Schema vs binary (ADR-013):** the decision schema's closed action enum *can represent* `RequestGracefulQuit` and `TerminateVerifiedOrphan` so that the policy layer can be designed, tested with fixtures, and reasoned about in traces. The v1 executor has no code path that performs them — there is nothing disabled-by-flag, there is something not-yet-written. ST-1/ST-2 verify this at build time.
+
 ---
 
 ## 4. T4 — Cooperative app release

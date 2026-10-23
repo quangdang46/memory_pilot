@@ -1,8 +1,10 @@
 # ADR-013 — Action policy revision: tiers and orphan handling
 
-**Status:** Proposed
+**Status:** Accepted (v1 scope only)
 **Date:** 2026-10-23
 **Related:** ADR-006, ADR-012, `../06-problem-first/protection-actions.md`, `../06-problem-first/system-protection-core.md`
+
+**ADR-012 status clarification:** ADR-012 (Accepted, firm) forbids adding process-termination capability to the shipped binary *as a general power*. This ADR does not overturn that. T3 `act` (`RequestGracefulQuit`, `TerminateVerifiedOrphan`) is **designed but not compiled into v1**: the schema can describe it, the policy can reason about it, but the executor has no code path that performs it, and ST-1/ST-2 still scan the binary for any such path. Turning `act` on for any class requires a separate ADR amendment with measured false-positive data. See `process-relief-engine.md` §0.
 
 ---
 
