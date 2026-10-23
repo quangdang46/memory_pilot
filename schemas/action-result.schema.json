@@ -16,12 +16,7 @@
 
     "class": {
       "type": "string",
-      "enum": [
-        "TrimOwnBuffers",
-        "RotateOwnLedger",
-        "EmitAdvisory",
-        "RequestReclaimFromProvider"
-      ],
+      "enum": ["TrimOwnBuffers", "RotateOwnLedger", "ReduceSamplingDetail", "EmitAdvisory", "RecommendCloseSession", "RecommendReduceConcurrency", "DeferLaunch", "RequestGracefulQuit", "TerminateVerifiedOrphan", "RequestReclaimFromProvider"],
       "$comment": "Closed by construction. There is no Signal/Suspend/Terminate/Restart/RunCommand variant — SI-1."
     },
 

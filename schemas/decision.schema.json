@@ -21,7 +21,7 @@
         "properties": {
           "action": {
             "type": "string",
-            "enum": ["TrimOwnBuffers", "RotateOwnLedger", "EmitAdvisory", "RequestReclaimFromProvider"]
+            "enum": ["TrimOwnBuffers", "RotateOwnLedger", "ReduceSamplingDetail", "EmitAdvisory", "RecommendCloseSession", "RecommendReduceConcurrency", "DeferLaunch", "RequestGracefulQuit", "TerminateVerifiedOrphan", "RequestReclaimFromProvider"]
           },
           "provider_id": { "type": ["string", "null"] },
           "expected_effect_bytes": {
@@ -42,7 +42,7 @@
       "properties": {
         "action": {
           "type": "string",
-          "enum": ["TrimOwnBuffers", "RotateOwnLedger", "EmitAdvisory", "RequestReclaimFromProvider"]
+          "enum": ["TrimOwnBuffers", "RotateOwnLedger", "ReduceSamplingDetail", "EmitAdvisory", "RecommendCloseSession", "RecommendReduceConcurrency", "DeferLaunch", "RequestGracefulQuit", "TerminateVerifiedOrphan", "RequestReclaimFromProvider"]
         },
         "provider_id": { "type": ["string", "null"] }
       }

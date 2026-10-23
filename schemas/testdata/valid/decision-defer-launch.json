@@ -1,0 +1,14 @@
+{
+  "v": 1,
+  "id": "dec-admit-1",
+  "mode": "observe",
+  "required_mode": "observe",
+  "candidates": [
+    {"action": "DeferLaunch", "expected_effect_bytes": [1100000000, 1800000000], "cost": 0.1, "risk": 0.0}
+  ],
+  "chosen": {"action": "DeferLaunch", "provider_id": null},
+  "no_action_reason": null,
+  "refused": [],
+  "policy_snapshot": {"mode": "observe", "allowlist": ["DeferLaunch", "EmitAdvisory"], "rate_limits": {}},
+  "created_at": "2026-10-23T11:05:00Z"
+}

@@ -66,3 +66,10 @@ Four distinct namespaces share similar words. Keeping them apart is what makes t
 | Time (display) | RFC3339 UTC | |
 | Pressure score | 0..1 | internal ordering key, not a user-facing percentage |
 | Confidence | 0..1 | heuristic index |
+
+| **Long-running workload protection** | The product's objective for sessions that run for hours: detect anomalies, prevent new demand, recommend closures, and act only where proven safe. Distinct from leak detection (a sensor) and from the relief engine (a tiered actor). |
+| **Abandonment confidence** | P(the process is not needed), one of three separate numbers in the relief engine. Drives the gate. |
+| **Interruption risk** | What breaks if we are wrong about abandonment. Drives the default (recommend, not act). |
+| **Expected memory relief** | Bytes we gain if we are right, with uncertainty. Drives priority, never permission. |
+| **Managed launch point** | Any entry point that sees a launch request before it runs (`mp run`, shell function, terminal profile hook). The only place admission control can act. |
+| **Orphan (verified)** | A process whose parent identity is unresolvable (twice, ≥ 60 s apart), whose tree ends at launchd, quiet for ≥ 10 min, not a service, and unclaimed by any adapter or session. A finding, not an action. |

@@ -1,0 +1,10 @@
+{
+  "v": 1,
+  "action_id": "act-s",
+  "decision_id": "dec-s",
+  "class": "Suspend",
+  "mode": "enforce",
+  "preconditions": [],
+  "outcome": "succeeded",
+  "verification": {"verdict": "unverified"}
+}

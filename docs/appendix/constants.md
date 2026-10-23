@@ -219,3 +219,19 @@ When a constant changes:
 1. change it here,
 2. change every doc that cites it by ID (grep the constant name),
 3. once code exists, the generated-table test will fail until this file matches the code — that is the intended direction of enforcement.
+
+---
+
+## 10. Process relief engine (`06-problem-first/process-relief-engine.md`, SCN-010)
+
+All provisional. The engine ships detect+recommend in v1; L2/L3 need false-positive data.
+
+| Constant | Value | Tag |
+|---|---|---|
+| graceful-quit wait | 10 s | P |
+| candidate kill budget per class | 3 / hour | P |
+| expected-relief cap per incident | 2 × remaining gap | P |
+| respawn-loop stop | 2 recreations in 10 min | P |
+| orphan evidence review window | 10 min quiet | P |
+| re-verify gap (identity) | two reads ≥ 60 s apart | P |
+| `no_action_reason` for blocked L2 | `policy_prohibits` | P |

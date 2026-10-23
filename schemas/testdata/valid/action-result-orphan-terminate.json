@@ -1,0 +1,19 @@
+{
+  "v": 1,
+  "action_id": "act-o1",
+  "decision_id": "dec-o1",
+  "class": "TerminateVerifiedOrphan",
+  "mode": "enforce",
+  "preconditions": [
+    {"name": "parent_identity_gone", "ok": true, "observed": "(5012,1729000000,123456) unresolved twice over 90s"},
+    {"name": "ancestry_terminates_at_launchd", "ok": true, "observed": "ppid=1"},
+    {"name": "idle_10min", "ok": true, "observed": "cpu 0.2%, io 0 B over 15 min"},
+    {"name": "not_launchd_service", "ok": true, "observed": "no plist match"},
+    {"name": "user_opt_in_class", "ok": true, "observed": "policy.t3.act.classes=[node-worker]"}
+  ],
+  "executed_at": "2026-10-23T11:02:00Z",
+  "duration_ms": 12,
+  "outcome": "succeeded",
+  "refusal_reason": null,
+  "verification": {"verdict": "unverified"}
+}
