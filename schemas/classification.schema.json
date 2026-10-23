@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mempilot.local/schemas/classification.schema.json",
+  "title": "Classification",
+  "description": "A growth classification for one workload group. SI-5: never a bare claim. See docs/03-algorithms/leak-suspicion.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v", "group_id", "classification", "confidence",
+    "basis", "alternative_explanations", "what_would_change_our_mind"
+  ],
+  "properties": {
+    "v": { "$ref": "common.schema.json#/$defs/Version" },
+    "group_id": { "type": "string", "minLength": 1 },
+    "classification": { "$ref": "common.schema.json#/$defs/Classification" },
+    "confidence": { "$ref": "common.schema.json#/$defs/Confidence" },
+
+    "basis": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "alternative_explanations": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "what_would_change_our_mind": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "recommended_next_step": { "type": ["string", "null"] }
+  },
+
+  "allOf": [
+    {
+      "$comment": "A leak suspicion must name at least one alternative we could not exclude.",
+      "if": { "properties": { "classification": { "const": "leak_suspicion" } }, "required": ["classification"] },
+      "then": { "properties": { "alternative_explanations": { "minItems": 1 } } }
+    },
+    {
+      "$comment": "Every classification other than 'unknown' must be falsifiable.",
+      "if": { "properties": { "classification": { "enum": ["workload_growth", "cache_or_retrievable", "subprocess_accumulation", "leak_suspicion"] } }, "required": ["classification"] },
+      "then": { "properties": { "what_would_change_our_mind": { "minItems": 1 } } }
+    }
+  ],
+
+  "$comment": "Renderer-level string check (ST-17) rejects /\\b(is|are|has) (a )?memory leak/i in any rendered output; schema cannot express content bans portably, so the check lives in the renderer test corpus."
+}

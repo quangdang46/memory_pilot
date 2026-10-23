@@ -1,0 +1,24 @@
+{
+  "v": 1,
+  "series": "headroom_bytes",
+  "horizon_s": 900,
+  "rate_bps": 1230000.0,
+  "acceleration_bps2": -4100.0,
+  "trend": "rising",
+  "burst_probability": 0.12,
+  "eta_point_s": 812,
+  "eta_lower_bound_s": 410,
+  "confidence": 0.78,
+  "confidence_terms": {"sample": 1.0, "residual": 0.71, "stability": 0.83, "coverage": 0.9},
+  "sample_count": 34,
+  "fallback_active": false,
+  "calibration": {
+    "state": "calibrated",
+    "coverage_empirical": 0.91,
+    "coverage_target": 0.9,
+    "resolved_count": 120,
+    "pending_count": 2,
+    "alpha": 0.11
+  },
+  "actionable": true
+}

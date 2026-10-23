@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mempilot.local/schemas/decision.schema.json",
+  "title": "Decision",
+  "description": "The policy engine's evaluation record. Exactly one of `chosen` / `no_action_reason` is present. See docs/04-safety/action-authorization.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "id", "mode", "candidates", "created_at", "policy_snapshot"],
+  "properties": {
+    "v": { "$ref": "common.schema.json#/$defs/Version" },
+    "id": { "type": "string", "minLength": 1 },
+    "mode": { "$ref": "common.schema.json#/$defs/Mode" },
+    "required_mode": { "$ref": "common.schema.json#/$defs/Mode" },
+
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["action", "expected_effect_bytes", "cost", "risk"],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["TrimOwnBuffers", "RotateOwnLedger", "EmitAdvisory", "RequestReclaimFromProvider"]
+          },
+          "provider_id": { "type": ["string", "null"] },
+          "expected_effect_bytes": {
+            "type": "array",
+            "items": { "type": "integer", "minimum": 0 },
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "cost": { "type": "number", "minimum": 0 },
+          "risk": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
+    },
+
+    "chosen": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["TrimOwnBuffers", "RotateOwnLedger", "EmitAdvisory", "RequestReclaimFromProvider"]
+        },
+        "provider_id": { "type": ["string", "null"] }
+      }
+    },
+
+    "no_action_reason": {
+      "type": ["string", "null"],
+      "enum": [
+        null,
+        "no_safe_relief",
+        "mode_insufficient",
+        "forecast_not_actionable",
+        "rate_limited",
+        "breaker_open",
+        "policy_prohibits"
+      ]
+    },
+
+    "refused": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["action", "reason"],
+        "properties": {
+          "action": { "type": "string" },
+          "reason": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+
+    "input_refs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "state_id": { "type": ["string", "null"] },
+        "forecast_id": { "type": ["string", "null"] },
+        "attribution_id": { "type": ["string", "null"] }
+      }
+    },
+
+    "policy_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "allowlist", "rate_limits"],
+      "properties": {
+        "mode": { "$ref": "common.schema.json#/$defs/Mode" },
+        "allowlist": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "rate_limits": { "type": "object" }
+      },
+      "$comment": "Recorded at plan time. Executor validates against THIS plus current safety invariants — never against live config alone (action-authorization §6.2). The snapshot can never widen a safety invariant."
+    },
+
+    "created_at": { "$ref": "common.schema.json#/$defs/Timestamp" }
+  },
+
+  "oneOf": [
+    { "required": ["chosen"], "properties": { "chosen": { "type": "object" }, "no_action_reason": { "type": "null" } } },
+    { "required": ["no_action_reason"], "properties": { "chosen": { "type": "null" }, "no_action_reason": { "type": "string" } } }
+  ]
+}

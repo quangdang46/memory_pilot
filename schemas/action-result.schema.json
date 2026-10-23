@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mempilot.local/schemas/action-result.schema.json",
+  "title": "ActionResult",
+  "description": "The record of one attempted action and its verification. See docs/04-safety/action-authorization.md §7.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v", "action_id", "decision_id", "class", "outcome",
+    "preconditions", "verification"
+  ],
+  "properties": {
+    "v": { "$ref": "common.schema.json#/$defs/Version" },
+    "action_id": { "type": "string", "minLength": 1 },
+    "decision_id": { "type": "string", "minLength": 1 },
+
+    "class": {
+      "type": "string",
+      "enum": [
+        "TrimOwnBuffers",
+        "RotateOwnLedger",
+        "EmitAdvisory",
+        "RequestReclaimFromProvider"
+      ],
+      "$comment": "Closed by construction. There is no Signal/Suspend/Terminate/Restart/RunCommand variant — SI-1."
+    },
+
+    "provider_id": { "type": ["string", "null"] },
+    "mode": { "$ref": "common.schema.json#/$defs/Mode" },
+
+    "preconditions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "ok"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "ok": { "type": "boolean" },
+          "observed": { "type": ["string", "null"] }
+        }
+      }
+    },
+
+    "executed_at": { "$ref": "common.schema.json#/$defs/Timestamp" },
+    "duration_ms": { "type": ["integer", "null"], "minimum": 0 },
+
+    "outcome": {
+      "type": "string",
+      "enum": ["succeeded", "refused", "failed", "timed_out", "unknown_crash_window"],
+      "$comment": "unknown_crash_window: an intent was durably recorded but no result was observed before restart. It is a RESULT value, not a separate event type, so that the ledger has exactly one record shape per action attempt. See failure-recovery §4."
+    },
+
+    "refusal_reason": {
+      "type": ["string", "null"],
+      "enum": [
+        null,
+        "not_healthy",
+        "mode_demoted",
+        "mode_insufficient",
+        "stale_decision",
+        "precondition",
+        "rate_limited",
+        "breaker_open",
+        "intent_not_durable"
+      ]
+    },
+
+    "expected_effect_bytes": {
+      "type": ["array", "null"],
+      "items": { "type": "integer", "minimum": 0 },
+      "minItems": 2,
+      "maxItems": 2
+    },
+
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verdict"],
+      "properties": {
+        "window_s": { "type": ["number", "null"], "minimum": 0 },
+        "pressure_before": { "type": ["object", "null"] },
+        "pressure_after": { "type": ["object", "null"] },
+        "observed_effect_bytes": { "type": ["integer", "null"] },
+        "verdict": {
+          "type": "string",
+          "enum": ["effective", "partial", "ineffective", "unverified"]
+        }
+      },
+      "allOf": [
+        {
+          "$comment": "P5: 'effective' requires an actual measurement, never a bare successful call.",
+          "if": { "properties": { "verdict": { "enum": ["effective", "partial", "ineffective"] } }, "required": ["verdict"] },
+          "then": {
+            "required": ["window_s", "observed_effect_bytes"],
+            "properties": {
+              "window_s": { "type": "number" },
+              "observed_effect_bytes": { "type": "integer" }
+            }
+          }
+        }
+      ]
+    }
+  },
+
+  "allOf": [
+    {
+      "$comment": "A refusal must say why; a non-refusal must not.",
+      "if": { "properties": { "outcome": { "const": "refused" } }, "required": ["outcome"] },
+      "then": {
+        "required": ["refusal_reason"],
+        "properties": { "refusal_reason": { "type": "string" } }
+      },
+      "else": {
+        "properties": { "refusal_reason": { "type": "null" } }
+      }
+    },
+    {
+      "$comment": "A crash-window outcome is always unverified: we cannot claim we measured what we cannot prove ran.",
+      "if": { "properties": { "outcome": { "const": "unknown_crash_window" } }, "required": ["outcome"] },
+      "then": {
+        "properties": { "verification": { "properties": { "verdict": { "const": "unverified" } }, "required": ["verdict"] } }
+      }
+    },
+    {
+      "$comment": "A refused action never ran, so its verification is unverified.",
+      "if": { "properties": { "outcome": { "const": "refused" } }, "required": ["outcome"] },
+      "then": {
+        "properties": { "verification": { "properties": { "verdict": { "const": "unverified" } }, "required": ["verdict"] } }
+      }
+    }
+  ]
+}

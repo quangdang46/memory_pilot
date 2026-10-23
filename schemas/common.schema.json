@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mempilot.local/schemas/common.schema.json",
+  "title": "Common definitions",
+  "$defs": {
+    "Version": {
+      "type": "integer",
+      "const": 1
+    },
+    "Timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "MonotonicNs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "MetricUnit": {
+      "type": "string",
+      "enum": ["bytes", "pages", "percent", "bytes_per_sec", "ns", "count"]
+    },
+    "MetricSource": {
+      "type": "string",
+      "enum": ["api", "command", "derived"]
+    },
+    "Quality": {
+      "type": "string",
+      "enum": ["ok", "degraded", "unavailable"]
+    },
+    "Metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "unit", "source", "quality", "mono", "ts"],
+      "properties": {
+        "value": { "type": "number" },
+        "unit": { "$ref": "#/$defs/MetricUnit" },
+        "source": { "$ref": "#/$defs/MetricSource" },
+        "quality": { "$ref": "#/$defs/Quality" },
+        "reason": { "type": ["string", "null"] },
+        "mono": { "$ref": "#/$defs/MonotonicNs" },
+        "ts": { "$ref": "#/$defs/Timestamp" }
+      },
+      "allOf": [
+        {
+          "$comment": "SI-4: a non-ok metric must carry a non-empty reason.",
+          "if": {
+            "properties": { "quality": { "enum": ["degraded", "unavailable"] } },
+            "required": ["quality"]
+          },
+          "then": {
+            "properties": { "reason": { "type": "string", "minLength": 1 } },
+            "required": ["reason"]
+          }
+        }
+      ]
+    },
+    "PressureStateName": {
+      "type": "string",
+      "enum": ["normal", "watch", "prevent", "critical", "unknown"]
+    },
+    "PressureProvenance": {
+      "type": "string",
+      "enum": ["kernel", "derived", "mixed", "none"]
+    },
+    "Trend": {
+      "type": "string",
+      "enum": ["rising", "flat", "falling"]
+    },
+    "Confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "ConfidenceTerms": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sample", "residual", "stability", "coverage"],
+      "properties": {
+        "sample": { "$ref": "#/$defs/Confidence" },
+        "residual": { "$ref": "#/$defs/Confidence" },
+        "stability": { "$ref": "#/$defs/Confidence" },
+        "coverage": { "$ref": "#/$defs/Confidence" }
+      }
+    },
+    "ProcessIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pid", "start_sec", "start_usec"],
+      "properties": {
+        "pid": { "type": "integer", "minimum": 1 },
+        "start_sec": { "type": "integer", "minimum": 0 },
+        "start_usec": { "type": "integer", "minimum": 0, "maximum": 999999 }
+      }
+    },
+    "Mode": {
+      "type": "string",
+      "enum": ["observe", "canary", "enforce"]
+    },
+    "Classification": {
+      "type": "string",
+      "enum": ["workload_growth", "cache_or_retrievable", "subprocess_accumulation", "leak_suspicion", "unknown"]
+    },
+    "Uri": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:" }
+  }
+}

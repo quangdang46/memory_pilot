@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mempilot.local/schemas/pressure-state.schema.json",
+  "title": "PressureState",
+  "description": "Normalized memory-pressure state with provenance. See docs/03-algorithms/pressure-estimator.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "state", "score", "reliable", "provenance", "inputs"],
+  "properties": {
+    "v": { "$ref": "common.schema.json#/$defs/Version" },
+    "state": { "$ref": "common.schema.json#/$defs/PressureStateName" },
+    "score": { "type": "number", "minimum": 0, "maximum": 1 },
+    "reliable": { "type": "boolean" },
+    "provenance": { "$ref": "common.schema.json#/$defs/PressureProvenance" },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kernel_level": { "$ref": "common.schema.json#/$defs/Metric" },
+        "free_pct": { "$ref": "common.schema.json#/$defs/Metric" },
+        "compressor_pct": { "$ref": "common.schema.json#/$defs/Metric" },
+        "swap_rate": { "$ref": "common.schema.json#/$defs/Metric" },
+        "disk_free": { "$ref": "common.schema.json#/$defs/Metric" }
+      }
+    },
+    "reasons": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "hysteresis": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "changed_at": { "$ref": "common.schema.json#/$defs/Timestamp" },
+        "previous": { "$ref": "common.schema.json#/$defs/PressureStateName" },
+        "dwell_s": { "type": "number", "minimum": 0 }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "$comment": "SI-4: Unknown is never reliable, and it always says why.",
+      "if": { "properties": { "state": { "const": "unknown" } }, "required": ["state"] },
+      "then": {
+        "properties": {
+          "reliable": { "const": false },
+          "reasons": { "minItems": 1 }
+        }
+      }
+    },
+    {
+      "$comment": "A derived or absent provenance means we are not relying on the OS's own judgement; it must never present as fully reliable without saying so.",
+      "if": { "properties": { "provenance": { "const": "none" } }, "required": ["provenance"] },
+      "then": { "properties": { "reliable": { "const": false } } }
+    }
+  ]
+}

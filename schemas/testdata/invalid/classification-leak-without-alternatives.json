@@ -1,0 +1,9 @@
+{
+  "v": 1,
+  "group_id": "anchor:iTerm2:3",
+  "classification": "leak_suspicion",
+  "confidence": 0.64,
+  "basis": ["grew 1.8 GB over 47 min"],
+  "alternative_explanations": [],
+  "what_would_change_our_mind": ["a plateau"]
+}

@@ -1,0 +1,15 @@
+{
+  "v": 1,
+  "pid": 1234,
+  "started_at": "2026-10-23T07:18:00Z",
+  "uptime_s": 3600,
+  "mode": "observe",
+  "degradation": 0,
+  "pressure": {"state": "watch", "score": 0.41, "provenance": "kernel", "reliable": true},
+  "forecast": {"eta_lower_bound_s": 410, "confidence": 0.78, "trustworthy": true, "actionable": true},
+  "self": {"rss_bytes": 41200000, "cpu_pct": 0.2, "goroutines": 9},
+  "last_sample_mono_ns": 987654321,
+  "last_sample_wall": "2026-10-23T08:18:00Z",
+  "ledger": {"segments": 3, "bytes": 8123456, "drops": 0},
+  "config_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+}

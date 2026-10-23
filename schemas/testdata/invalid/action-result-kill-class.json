@@ -1,0 +1,10 @@
+{
+  "v": 1,
+  "action_id": "act-y",
+  "decision_id": "dec-y",
+  "class": "Signal",
+  "mode": "enforce",
+  "preconditions": [],
+  "outcome": "succeeded",
+  "verification": {"verdict": "unverified"}
+}

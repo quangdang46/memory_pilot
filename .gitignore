@@ -1,0 +1,17 @@
+# Reference clones used for research only — never part of the product.
+# Keeping them out of git prevents accidentally shipping another project's source.
+.tmp/
+
+# Python venv used only to run schemas/validate.py
+.venv-schema/
+
+# Build/test artifacts
+/target/
+/bin/
+*.exe
+*.test
+coverage.out
+
+# Local data
+*.log
+.DS_Store

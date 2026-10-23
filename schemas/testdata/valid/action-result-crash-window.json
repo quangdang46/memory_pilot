@@ -1,0 +1,11 @@
+{
+  "v": 1,
+  "action_id": "act-20261023T120000-7777",
+  "decision_id": "dec-20261023T115959-8888",
+  "class": "RotateOwnLedger",
+  "mode": "observe",
+  "preconditions": [],
+  "outcome": "unknown_crash_window",
+  "refusal_reason": null,
+  "verification": {"verdict": "unverified"}
+}

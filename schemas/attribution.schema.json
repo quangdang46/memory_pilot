@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mempilot.local/schemas/attribution.schema.json",
+  "title": "Attribution",
+  "description": "Growth attributed to workload groups over a window. See docs/03-algorithms/process-attribution.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "window", "grouping_rule", "coverage", "system_delta_bytes", "groups"],
+  "properties": {
+    "v": { "$ref": "common.schema.json#/$defs/Version" },
+
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end", "duration_s"],
+      "properties": {
+        "start": { "$ref": "common.schema.json#/$defs/Timestamp" },
+        "end": { "$ref": "common.schema.json#/$defs/Timestamp" },
+        "duration_s": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+
+    "grouping_rule": { "type": "string", "minLength": 1 },
+
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "processes_seen", "processes_denied", "processes_estimated_total",
+        "coverage_ratio_system", "note"
+      ],
+      "properties": {
+        "processes_seen": { "type": "integer", "minimum": 0 },
+        "processes_denied": { "type": "integer", "minimum": 0 },
+        "processes_estimated_total": { "type": "integer", "minimum": 0 },
+        "coverage_ratio_system": { "type": "number", "minimum": 0 },
+        "note": { "type": "string", "minLength": 1 }
+      }
+    },
+
+    "system_delta_bytes": { "type": "integer" },
+    "compressor_delta_bytes": { "type": ["integer", "null"] },
+
+    "groups": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id", "label", "growth_bytes", "confidence",
+          "confidence_terms", "evidence", "alternative_explanations", "targetable"
+        ],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "label": { "type": "string", "minLength": 1 },
+          "growth_bytes": { "type": "integer" },
+          "growth_rate_bps": { "type": "number" },
+          "accelerating": { "type": "boolean" },
+          "process_count": { "type": "integer", "minimum": 0 },
+          "top_contributor": {
+            "type": ["object", "null"],
+            "additionalProperties": false,
+            "properties": {
+              "identity": { "$ref": "common.schema.json#/$defs/ProcessIdentity" },
+              "name": { "type": "string" },
+              "growth_bytes": { "type": "integer" }
+            }
+          },
+          "targetable": {
+            "type": "boolean",
+            "$comment": "false for protected/session-critical groups. They are still REPORTED (transparency) but excluded from action targeting."
+          },
+          "confidence": { "$ref": "common.schema.json#/$defs/Confidence" },
+          "confidence_terms": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["denied", "coverage_deviation", "grouping_instability"],
+            "properties": {
+              "denied": { "$ref": "common.schema.json#/$defs/Confidence" },
+              "coverage_deviation": { "$ref": "common.schema.json#/$defs/Confidence" },
+              "grouping_instability": { "$ref": "common.schema.json#/$defs/Confidence" }
+            }
+          },
+          "evidence": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "alternative_explanations": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+
+    "large_but_stable": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["label", "resident_bytes", "delta_bytes"],
+        "properties": {
+          "label": { "type": "string", "minLength": 1 },
+          "resident_bytes": { "type": "integer", "minimum": 0 },
+          "delta_bytes": { "type": "integer" }
+        }
+      }
+    }
+  },
+
+  "$comment": "Per-group `evidence` is required by the item schema, so every reported group carries its basis. `coverage.note` is a constant sentence (the shared-page caveat) and is mandatory even when not strictly needed, because omitting it is how reports become misleading."
+}

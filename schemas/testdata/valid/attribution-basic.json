@@ -1,0 +1,33 @@
+{
+  "v": 1,
+  "window": {"start": "2026-10-23T10:00:00Z", "end": "2026-10-23T10:20:00Z", "duration_s": 1200},
+  "grouping_rule": "nearest_anchor:v1",
+  "coverage": {
+    "processes_seen": 512,
+    "processes_denied": 37,
+    "processes_estimated_total": 600,
+    "coverage_ratio_system": 1.31,
+    "note": "process sums include shared pages; may exceed system delta"
+  },
+  "system_delta_bytes": 2400000000,
+  "compressor_delta_bytes": 410000000,
+  "groups": [
+    {
+      "id": "anchor:iTerm2:3",
+      "label": "iTerm2 (session 3)",
+      "growth_bytes": 1450000000,
+      "growth_rate_bps": 1208333,
+      "accelerating": true,
+      "process_count": 14,
+      "top_contributor": {"identity": {"pid": 5012, "start_sec": 1729000000, "start_usec": 123456}, "name": "node", "growth_bytes": 980000000},
+      "targetable": true,
+      "confidence": 0.82,
+      "confidence_terms": {"denied": 0.94, "coverage_deviation": 0.92, "grouping_instability": 1.0},
+      "evidence": ["14 processes in group grew >= 10 MB", "growth began 3 min after a test runner started"],
+      "alternative_explanations": ["shared page accounting inflation"]
+    }
+  ],
+  "large_but_stable": [
+    {"label": "VS Code", "resident_bytes": 2100000000, "delta_bytes": 12000000}
+  ]
+}

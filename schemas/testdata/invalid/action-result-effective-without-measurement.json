@@ -1,0 +1,11 @@
+{
+  "v": 1,
+  "action_id": "act-z",
+  "decision_id": "dec-z",
+  "class": "RequestReclaimFromProvider",
+  "provider_id": "prov-bar",
+  "mode": "canary",
+  "preconditions": [],
+  "outcome": "succeeded",
+  "verification": {"verdict": "effective"}
+}

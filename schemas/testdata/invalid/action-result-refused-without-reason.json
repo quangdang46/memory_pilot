@@ -1,0 +1,10 @@
+{
+  "v": 1,
+  "action_id": "act-x",
+  "decision_id": "dec-x",
+  "class": "TrimOwnBuffers",
+  "mode": "observe",
+  "preconditions": [],
+  "outcome": "refused",
+  "verification": {"verdict": "unverified"}
+}

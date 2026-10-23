@@ -1,0 +1,20 @@
+{
+  "v": 1,
+  "group_id": "anchor:iTerm2:3",
+  "classification": "leak_suspicion",
+  "confidence": 0.64,
+  "basis": [
+    "grew 1.8 GB over 47 min with no plateau",
+    "CPU flat at 0.3% for the last 31 min",
+    "no child process spawned in 29 min"
+  ],
+  "alternative_explanations": [
+    "internal cache with an undocumented ceiling",
+    "allocator fragmentation rather than retention"
+  ],
+  "what_would_change_our_mind": [
+    "a plateau of >= 15 min",
+    "CPU or I/O rising to match the growth rate"
+  ],
+  "recommended_next_step": "run Instruments (Leaks/Allocations) against PID 5012 if you want certainty"
+}

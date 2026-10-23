@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mempilot.local/schemas/state-file.schema.json",
+  "title": "StateFile",
+  "description": "Heartbeat written atomically every 5 s. Read by `status` and `doctor` even when the daemon is wedged. Stale after 30 s.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v", "pid", "started_at", "uptime_s", "mode", "degradation",
+    "pressure", "forecast", "self", "last_sample_mono_ns", "last_sample_wall",
+    "ledger", "config_hash"
+  ],
+  "properties": {
+    "v": { "$ref": "common.schema.json#/$defs/Version" },
+    "pid": { "type": "integer", "minimum": 1 },
+    "started_at": { "$ref": "common.schema.json#/$defs/Timestamp" },
+    "uptime_s": { "type": "number", "minimum": 0 },
+    "mode": { "$ref": "common.schema.json#/$defs/Mode" },
+
+    "degradation": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5,
+      "$comment": "0 normal, 1 reduced detail, 2 reduced cadence, 3 minimal, 4 silent, 5 exiting"
+    },
+
+    "pressure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "score", "provenance", "reliable"],
+      "properties": {
+        "state": { "$ref": "common.schema.json#/$defs/PressureStateName" },
+        "score": { "type": "number", "minimum": 0, "maximum": 1 },
+        "provenance": { "$ref": "common.schema.json#/$defs/PressureProvenance" },
+        "reliable": { "type": "boolean" }
+      }
+    },
+
+    "forecast": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["confidence", "trustworthy", "actionable"],
+      "properties": {
+        "eta_lower_bound_s": { "type": ["number", "null"] },
+        "confidence": { "$ref": "common.schema.json#/$defs/Confidence" },
+        "trustworthy": { "type": "boolean" },
+        "actionable": { "type": "boolean" }
+      }
+    },
+
+    "self": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rss_bytes", "cpu_pct", "goroutines"],
+      "properties": {
+        "rss_bytes": { "type": "integer", "minimum": 0 },
+        "cpu_pct": { "type": "number", "minimum": 0 },
+        "goroutines": { "type": "integer", "minimum": 0 }
+      }
+    },
+
+    "last_sample_mono_ns": { "$ref": "common.schema.json#/$defs/MonotonicNs" },
+    "last_sample_wall": { "$ref": "common.schema.json#/$defs/Timestamp" },
+
+    "ledger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["segments", "bytes", "drops"],
+      "properties": {
+        "segments": { "type": "integer", "minimum": 0 },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "drops": { "type": "integer", "minimum": 0 }
+      }
+    },
+
+    "config_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+  }
+}

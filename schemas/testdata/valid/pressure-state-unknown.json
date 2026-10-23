@@ -1,0 +1,12 @@
+{
+  "v": 1,
+  "state": "unknown",
+  "score": 0.5,
+  "reliable": false,
+  "provenance": "none",
+  "inputs": {
+    "kernel_level": {"value": 0, "unit": "count", "source": "api", "quality": "unavailable", "reason": "EPERM reading kern.memorystatus_vm_pressure_level", "mono": 1, "ts": "2026-10-23T10:30:00Z"},
+    "free_pct": {"value": 0, "unit": "percent", "source": "derived", "quality": "unavailable", "reason": "host_statistics64 failed", "mono": 1, "ts": "2026-10-23T10:30:00Z"}
+  },
+  "reasons": ["all pressure sources unavailable"]
+}

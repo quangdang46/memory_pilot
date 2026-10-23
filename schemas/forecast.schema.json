@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mempilot.local/schemas/forecast.schema.json",
+  "title": "Forecast",
+  "description": "A forecast of headroom depletion. eta_point_s is for display; eta_lower_bound_s is the only value policy may act on. See docs/03-algorithms/forecasting.md §6.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v", "series", "horizon_s", "rate_bps", "trend",
+    "confidence", "confidence_terms", "sample_count", "fallback_active",
+    "calibration", "actionable"
+  ],
+  "properties": {
+    "v": { "$ref": "common.schema.json#/$defs/Version" },
+    "series": {
+      "type": "string",
+      "enum": ["headroom_bytes", "swap_used_bytes", "compressor_bytes"]
+    },
+    "horizon_s": { "type": "number", "exclusiveMinimum": 0, "maximum": 7200 },
+    "rate_bps": { "type": "number" },
+    "acceleration_bps2": { "type": "number" },
+    "trend": { "$ref": "common.schema.json#/$defs/Trend" },
+    "burst_probability": { "$ref": "common.schema.json#/$defs/Confidence" },
+
+    "eta_point_s": {
+      "description": "Point estimate. DISPLAY ONLY — never substitute for the bound.",
+      "type": ["number", "null"],
+      "minimum": 0
+    },
+    "eta_lower_bound_s": {
+      "description": "Conformal one-sided lower bound at target coverage. The only value policy may act on.",
+      "type": ["number", "null"],
+      "minimum": 0
+    },
+
+    "confidence": { "$ref": "common.schema.json#/$defs/Confidence" },
+    "confidence_terms": { "$ref": "common.schema.json#/$defs/ConfidenceTerms" },
+    "sample_count": { "type": "integer", "minimum": 0 },
+    "fallback_active": { "type": "boolean" },
+
+    "calibration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "coverage_target", "resolved_count", "pending_count", "alpha"],
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": ["warming", "calibrated", "degraded"]
+        },
+        "coverage_empirical": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "coverage_target": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+        "resolved_count": { "type": "integer", "minimum": 0 },
+        "pending_count": { "type": "integer", "minimum": 0 },
+        "alpha": { "type": "number", "minimum": -0.5, "maximum": 1.0 }
+      },
+      "allOf": [
+        {
+          "$comment": "While warming there is no empirical coverage yet.",
+          "if": { "properties": { "state": { "const": "warming" } }, "required": ["state"] },
+          "then": { "properties": { "coverage_empirical": { "type": "null" } } }
+        }
+      ]
+    },
+
+    "actionable": { "type": "boolean" }
+  },
+
+  "allOf": [
+    {
+      "$comment": "HARD INVARIANT: actionable requires a real bound, a calibrated state, and no fallback.",
+      "if": { "properties": { "actionable": { "const": true } }, "required": ["actionable"] },
+      "then": {
+        "required": ["eta_lower_bound_s"],
+        "properties": {
+          "eta_lower_bound_s": { "type": "number" },
+          "fallback_active": { "const": false },
+          "calibration": {
+            "properties": { "state": { "const": "calibrated" } },
+            "required": ["state"]
+          }
+        }
+      }
+    },
+    {
+      "$comment": "HARD INVARIANT: a warming bound is not a bound, so nothing is actionable.",
+      "if": {
+        "properties": { "calibration": { "properties": { "state": { "const": "warming" } }, "required": ["state"] } },
+        "required": ["calibration"]
+      },
+      "then": { "properties": { "actionable": { "const": false } } }
+    },
+    {
+      "$comment": "A degraded calibration can never be actionable.",
+      "if": {
+        "properties": { "calibration": { "properties": { "state": { "const": "degraded" } }, "required": ["state"] } },
+        "required": ["calibration"]
+      },
+      "then": { "properties": { "actionable": { "const": false } } }
+    },
+    {
+      "$comment": "A fallback estimate is never actionable.",
+      "if": { "properties": { "fallback_active": { "const": true } }, "required": ["fallback_active"] },
+      "then": { "properties": { "actionable": { "const": false } } }
+    }
+  ]
+}

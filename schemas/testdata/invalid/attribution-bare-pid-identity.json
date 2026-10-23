@@ -1,0 +1,17 @@
+{
+  "v": 1,
+  "window": {"start": "2026-10-23T10:00:00Z", "end": "2026-10-23T10:20:00Z", "duration_s": 1200},
+  "grouping_rule": "nearest_anchor:v1",
+  "coverage": {"processes_seen": 1, "processes_denied": 0, "processes_estimated_total": 1, "coverage_ratio_system": 1.0, "note": "x"},
+  "system_delta_bytes": 100,
+  "groups": [
+    {
+      "id": "g", "label": "G", "growth_bytes": 100, "targetable": true,
+      "top_contributor": {"identity": {"pid": 5012}, "name": "node", "growth_bytes": 100},
+      "confidence": 0.5,
+      "confidence_terms": {"denied": 1.0, "coverage_deviation": 1.0, "grouping_instability": 1.0},
+      "evidence": ["x"],
+      "alternative_explanations": []
+    }
+  ]
+}

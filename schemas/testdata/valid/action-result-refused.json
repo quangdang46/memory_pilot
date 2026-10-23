@@ -1,0 +1,14 @@
+{
+  "v": 1,
+  "action_id": "act-20261023T110000-4e5f",
+  "decision_id": "dec-20261023T105959-0a1b",
+  "class": "RequestReclaimFromProvider",
+  "provider_id": "prov-foo",
+  "mode": "observe",
+  "preconditions": [
+    {"name": "mode_allows", "ok": false, "observed": "observe < canary"}
+  ],
+  "outcome": "refused",
+  "refusal_reason": "mode_insufficient",
+  "verification": {"verdict": "unverified"}
+}

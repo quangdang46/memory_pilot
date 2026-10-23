@@ -1,0 +1,24 @@
+{
+  "v": 1,
+  "action_id": "act-20261023T103000-1a2b",
+  "decision_id": "dec-20261023T102959-9c8d",
+  "class": "TrimOwnBuffers",
+  "provider_id": null,
+  "mode": "observe",
+  "preconditions": [
+    {"name": "daemon_healthy", "ok": true, "observed": "healthy"},
+    {"name": "mode_allows", "ok": true, "observed": "observe"}
+  ],
+  "executed_at": "2026-10-23T10:30:00Z",
+  "duration_ms": 3,
+  "outcome": "succeeded",
+  "refusal_reason": null,
+  "expected_effect_bytes": [1048576, 8388608],
+  "verification": {
+    "window_s": 120,
+    "pressure_before": {"state": "watch"},
+    "pressure_after": {"state": "watch"},
+    "observed_effect_bytes": 2097152,
+    "verdict": "partial"
+  }
+}

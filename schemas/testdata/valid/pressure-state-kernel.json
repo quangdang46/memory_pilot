@@ -1,0 +1,13 @@
+{
+  "v": 1,
+  "state": "watch",
+  "score": 0.41,
+  "reliable": true,
+  "provenance": "kernel",
+  "inputs": {
+    "kernel_level": {"value": 1, "unit": "count", "source": "api", "quality": "ok", "reason": null, "mono": 123456789, "ts": "2026-10-23T10:30:00Z"},
+    "free_pct": {"value": 6.2, "unit": "percent", "source": "derived", "quality": "ok", "reason": null, "mono": 123456789, "ts": "2026-10-23T10:30:00Z"}
+  },
+  "reasons": ["free_pct falling 0.8pp/min"],
+  "hysteresis": {"changed_at": "2026-10-23T10:20:00Z", "previous": "normal", "dwell_s": 22}
+}

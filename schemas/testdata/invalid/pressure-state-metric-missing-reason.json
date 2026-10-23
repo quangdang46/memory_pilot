@@ -1,0 +1,10 @@
+{
+  "v": 1,
+  "state": "normal",
+  "score": 0.1,
+  "reliable": true,
+  "provenance": "kernel",
+  "inputs": {
+    "free_pct": {"value": 0, "unit": "percent", "source": "derived", "quality": "unavailable", "reason": null, "mono": 1, "ts": "2026-10-23T10:30:00Z"}
+  }
+}
