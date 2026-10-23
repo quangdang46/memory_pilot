@@ -90,6 +90,25 @@ Fault-injection suites, 72-hour soak, replay against the full corpus, 7-day obse
 
 ---
 
+## Exit gates, one per phase (binding)
+
+Each phase has exactly one gate bead; the epic does not close until its gate closes. The gate is the *proof of the phase-level claim*, not a duplicate of any component task.
+
+| Phase | Gate | Proves |
+|---|---|---|
+| 0 | **G-P0** | S-1..S-7 recorded (or S-2 not-applicable with S-1's evidence); ADR-001/002/004/008 Verified-or-Rejected; measured constants replaced their P-tags |
+| 1 | **G-P1** | 24 h on the target Mac: correct collection, within budget, no monotonic growth, clean restart |
+| 2 | **G-P2** | forecast beats the naive baseline on the corpus, MP-REQ-020..026, nothing actionable without confidence |
+| 3 | **G-P3** | SCN-005 + bucket correctness on the three traces, phrase test, coverage on every attribution path |
+| 4 | **G-P4** | ST-1..ST-24 green on the executor as built (via the development ST run), ST-22 unmodified, T3 act absent |
+| 5 | **G-P5** | golden CLI output, exit-code namespaces, SCN-008/009/010, honest-language rules |
+| 6 | **G-P6** | pre-release replay of MP-SCN-001..011 on the final build, 7-day baseline report, canary decisions |
+| spec | **G-FREEZE** | G1–G8 current, G7 script passes, G3 scope decided, owner freeze signed |
+
+**Ordering rule inside Phase 0:** S-1 runs first (it decides whether cgo is needed). S-2 runs only if S-1 says a cgo bridge is required; otherwise S-2 closes not-applicable citing S-1. **S-3 is independent of S-2** — it reads sysctl values, not dispatch latency — and may run in parallel with S-1/S-2. S-4, S-5, and S-7 are mutually independent.
+
+---
+
 ## Phase-numbering note (binding)
 
 The implementation beads (`.beads/`) are the detailed build plan; this roadmap is the authority for **phase scope and exit gates**. Where they once disagreed — trace corpus/replay placement, CLI placement, the safety-suite's two runs (development G-P4 vs. pre-release P6SAFETY), and the S-7 footprint spike — the two now agree as written above and in the Phase 1 epic's parallelism rule. A future disagreement is a bug in one of the two, to be resolved by editing the stale one, not by interpreting around it.
