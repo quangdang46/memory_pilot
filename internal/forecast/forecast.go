@@ -234,9 +234,10 @@ func (f *Forecaster) burst() (prob float64, active bool) {
 	}
 	sort.Float64s(mags)
 	median := mags[len(mags)/2]
-	if median < 1 { // idle noise skip
-		return 0, false
-	}
+	// sbh skips when median < 1 (disk rates, always nonzero). Headroom rates
+	// sit at 0 on an idle machine, so a flat baseline uses an absolute floor
+	// (1 MB/s) instead of the relative MAD bound — otherwise a single spike
+	// on an idle machine would be undetectable.
 	devs := make([]float64, len(mags))
 	for i, m := range mags {
 		devs[i] = math.Abs(m - median)
@@ -244,6 +245,9 @@ func (f *Forecaster) burst() (prob float64, active bool) {
 	sort.Float64s(devs)
 	mad := 1.4826 * devs[len(devs)/2]
 	upper := median + 3*mad
+	if median < 1<<10 {
+		upper = 1 << 20 // 1 MB/s absolute floor on a flat baseline
+	}
 	last := f.rateHist[len(f.rateHist)-1]
 	if math.Abs(last.rate) > upper {
 		f.burstDur++
