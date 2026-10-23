@@ -59,9 +59,9 @@ Process identity, grouping, delta accounting, classification buckets, `report`/`
 
 ## Phase 4 — Policy, safety surface, CLI
 
-Policy engine, planner, executor, actionguard, self-only providers, verification, IPC, `status`/`policy` commands.
+Policy engine, planner, executor, actionguard, providers within the ADR-013 v1 scope (T1 self-actions; T2 deferral via `mp run`; T3 detect+recommend only; T5 advisories), verification, IPC, `status`/`policy` commands.
 
-**Exit gate:** the full safety suite is green, including ST-22 (the forbidden scenario). No relief beyond self-trimming exists.
+**Exit gate:** the full safety suite is green, including ST-22 (the forbidden scenario). No mechanism that frees another process's memory exists; T3 `act` has no executor code path (ADR-012/ADR-013).
 
 ---
 

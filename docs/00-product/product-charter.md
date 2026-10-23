@@ -53,6 +53,8 @@ This distinction is load-bearing. Without it, "reduce out-of-memory events" quie
 
 **The failure mode this table prevents:** someone reads "success = fewer OOM events" and concludes the team must build an automatic memory releaser to hit it. Category A and B can reduce OOM events with **zero** providers. If that turns out to be insufficient, the honest conclusion is "a third-party daemon cannot fix this workload on 16 GB", not "add a risky provider".
 
+**Where the ADR-013 tiers sit in this table:** T2 deferral (`DeferLaunch`), T3 detect+recommend, and T5 advisories are Category **A/B**, not C — they prevent new demand or enable the user to act, and none of them frees memory held by another application. Category C remains empty in v1: T3 `act` (`RequestGracefulQuit`, `TerminateVerifiedOrphan`) is designed but has no executor code path (ADR-012/ADR-013).
+
 **Corollary for the roadmap:** Phase 5's go/no-go is about whether A+B measurably helps — not about whether C is implemented.
 
 ---

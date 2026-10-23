@@ -109,7 +109,41 @@ Replacing one word with another across 57 files can create new inconsistencies. 
 ## E. What "done" does *not* mean
 
 - Does not mean every algorithm is proven — several are `Proposed` and require Phase 0 spikes.
-- Does not mean every relief action exists — v1 deliberately has almost none (ADR-006).
+- Does not mean every relief action exists — v1 deliberately has no provider that frees another process's memory (see `00-product/v1-scope-contract.md`; this line previously cited ADR-006's superseded phrasing).
 - Does not mean the product will prevent every OOM — it cannot (charter L1), and the spec says so.
 
 The spec is complete when the **shape** is settled and the **unknowns are enumerated with a plan**. It is not complete when every number is known; that requires the machine.
+
+---
+
+## F. Spec freeze — Go / No-Go criteria (added 2026-10-23)
+
+The freeze decision is: **start implementation, or keep the spec open**. It is taken once, against this section, not re-litigated per document.
+
+**Go — start implementation — when ALL hold:**
+
+1. **Scope contract exists and is referenced.** `00-product/v1-scope-contract.md` is the binding scope; requirements carry MP-REQ-051; the docs index points at the contract first. (Done this batch.)
+2. **No scope contradiction remains open.** Every document that once said "nothing beyond self-trimming" has been restated or explicitly cites the contract as the correction. (Done this batch: ADR-006, roadmap Phase 4, synthesis §3, charter §3.5.)
+3. **Designed-vs-compiled is stated where T3 act appears.** Any doc naming `RequestGracefulQuit`/`TerminateVerifiedOrphan` states the executor has no code path in v1 and ST-1/ST-2 verify that. (Done: ADR-013, `protection-actions.md` §3.4, `process-relief-engine.md` §0, `schemas/README.md` invariant 4.)
+4. **Validator green.** `schemas/validate.py` exit 0 on the current fixtures. (30 fixtures, green.)
+5. **The unresolved questions are enumerated with owners and methods, and none of them can make us build the wrong product.** That is §C + the Phase 0 spike list: answering them changes numbers and thresholds, not the architecture. This is a judgment call the owner makes at freeze time — the checklist's job is to make the open set visible, not to close it.
+
+**No-Go — keep the spec open — if ANY hold:**
+
+1. A scope contradiction is found that the contract does not resolve (a document implies an executor capability the contract denies).
+2. A safety invariant lacks a mechanical enforcement *specified* (ST-1..ST-22 coverage gap) — enforcement is implemented later, but the specification of how each invariant is checked must exist before code.
+3. A v1 requirement has no acceptance test named (spec-side traceability gap, §B1).
+4. A schema in the core-contract set has no valid+invalid fixture pair (G3 scope).
+
+**After freeze, the spec reopens only for:**
+
+1. a contradiction that blocks implementation,
+2. a newly found safety problem,
+3. a core requirement that proves untestable as designed,
+4. real data that falsifies a load-bearing assumption.
+
+Everything else goes to the backlog. Feature ideas discovered during implementation are **not** freeze-breakers.
+
+**Freeze status: GO on items 1–4; item 5 is the owner's call.** The honest statement is: items 1–4 were closed this batch. Item 5 — "none of the open questions can make us build the wrong product" — has not been asserted; §C lists open questions with resolution paths but no owner sign-off. The owner freezes by recording the decision (date + signature line) here:
+
+> Spec freeze decision: ______________ Date: __________ Go / No-Go (circle one). Open questions accepted as post-freeze work: __________.

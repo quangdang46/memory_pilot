@@ -23,6 +23,7 @@ A claim that cannot be verified is not stated as fact anywhere in this set. See 
 
 | # | Document | Read it if you want… |
 |---|---|---|
+| 0 | `00-product/v1-scope-contract.md` | **read this first** — the binding v1 scope; wins over any other doc on scope questions |
 | 1 | `00-product/product-charter.md` | the problem, the user, success criteria, what this is not |
 | 2 | `00-product/goals-and-non-goals.md` | decomposed goals and the 13 explicit non-goals |
 | 3 | `00-product/requirements.md` | MP-REQ-xxx with acceptance criteria and verification method |
@@ -34,7 +35,7 @@ A claim that cannot be verified is not stated as fact anywhere in this set. See 
 | 9 | `02-architecture/module-contracts.md` | Go interfaces per module |
 | 10 | `03-algorithms/*` | pressure model, forecasting, attribution, leak suspicion |
 | 11 | `04-safety/*` | invariants, authorization, protection, failure recovery |
-| 12 | `05-testing/*` | strategy, replay corpus, fault injection, budgets, safety suite |
+| 12 | `05-testing/*` | strategy, evidence rules (`execution-evidence.md`), replay corpus, fault injection, budgets, safety suite |
 
 ---
 

@@ -1,8 +1,8 @@
 # ADR-006 — Which relief actions are real on macOS
 
-**Status:** Proposed — **currently: almost none are proven**
+**Status:** Accepted (reasoning) — **scope phrasing superseded by ADR-013; the provider bar below remains in force**
 **Date:** 2026-10-23
-**Related:** `../04-safety/action-authorization.md` §2.1, §3
+**Related:** `../04-safety/action-authorization.md` §2.1, §3, ADR-013, `../00-product/v1-scope-contract.md` §2
 
 ---
 
@@ -26,7 +26,9 @@ The product's relief layer needs at least one mechanism that measurably reduces 
 
 ## Decision
 
-**v1 allowlist = self-only actions.**
+**v1 allowlist (amended by ADR-013 tiers — this section superseded in scope, reasoning retained).**
+
+At the time this ADR was written:
 
 ```
 TrimOwnBuffers
@@ -34,9 +36,11 @@ RotateOwnLedger
 EmitAdvisory
 ```
 
-That is the complete set. The product's relief capability in v1 is *reporting* plus *self-shrinking*.
+That was the complete set: *reporting* plus *self-shrinking*. The reasoning below remains valid for **other-process memory** — a user-scope daemon cannot reach into another app's heap and free it.
 
-This is intentionally underwhelming, and it is the honest position: on macOS, a user-scope third-party daemon cannot reliably reduce system memory pressure. What it *can* do — and what the product therefore must excel at — is predict, explain, and advise.
+ADR-013 revised the relief space without touching that reasoning: the added v1 capabilities are not memory-freeing mechanisms at all. **T2** (`DeferLaunch` via `mp run`) prevents *new* demand from arriving; **T3** detect+recommend names orphan candidates for the *user* to act on; **T5** (`RecommendCloseSession`, `RecommendReduceConcurrency`, `RequestReclaimFromProvider`) advises. None of them frees another process's memory, so none of them needed the provider bar this ADR defines. T3 `act` — the one thing that *would* touch another process — still needs a measured false-positive corpus per class (ADR-013 §Revisit triggers) and does not exist in the v1 executor.
+
+The current v1 scope lives in ADR-013 and `../06-problem-first/protection-actions.md`; this ADR's investigation plan (§below) still governs any future *provider* (a mechanism claiming to free or return memory held by another application).
 
 ---
 

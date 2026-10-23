@@ -49,7 +49,7 @@ The conversation left these open; they are decided here, each with an ADR:
 - hybrid pressure signal: dispatch events + kernel sysctl + polling liveness
 - two sampling loops (system vs. process) with separate cadences and hard floors (ADR-004)
 - JSONL-only ledger in v1, with a derivable sidecar index if needed (ADR-003)
-- no relief provider in v1 beyond self-trimming; `memory_pressure` purge explicitly rejected for v1 (ADR-006)
+- no *provider* in v1 that frees another process's memory; `memory_pressure` purge explicitly rejected for v1 (ADR-006, still in force). Scope was later widened by ADR-013 to admit prevention/advice actions that do not free foreign memory: T2 deferral, T3 detect+recommend, T5 advisories. ADR-013 supersedes this line's "nothing beyond self-trimming" phrasing, not ADR-006's reasoning
 - forecast tiers T0→T3, each gated on measurable improvement (ADR-005)
 
 ---

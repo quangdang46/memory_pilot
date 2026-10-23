@@ -64,6 +64,7 @@ Every requirement must be falsifiable. If it cannot be tested, it is not a requi
 | MP-REQ-048 | M | When no safe action exists at CRITICAL, emit an advisory with contributors and options; do not act. | Scenario MP-SCN-105 test. | T |
 | MP-REQ-049 | M | Single-writer guarantee: a second daemon instance refuses to start (lock + socket check), with an actionable message. | Concurrency test. | T |
 | MP-REQ-050 | M | Baseline measurement harness: run the daemon in observe mode over a real 7-day workload and emit a report with incident count, warning lead time, and false-positive rate. | Report produced; numbers compared to the pre-install baseline period. | M |
+| MP-REQ-051 | M | The v1 action set is exactly `v1-scope-contract.md` §2 (T1 yes, T2 `DeferLaunch` yes, T3 detect+recommend yes / act no code path, T4 empty, T5 advisories yes); `decision.schema.json`'s action enum matches this table and no other process-targeting action exists in the schema. | Inspection: enum members ⊆ contract table; any process-targeting addition fails review until the contract's §5 widening procedure (ADR amendment + safety suite + canary evidence) is complete. | I |
 
 ## 5. Functional — Ledger, reporting, CLI
 

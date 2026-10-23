@@ -47,7 +47,7 @@ Reasoning for each is in [`docs/00-product/goals-and-non-goals.md`](docs/00-prod
 
 ```
 docs/                     the specification set (start at docs/README.md)
-  ├── 00-product/         charter, goals, requirements, scenarios, roadmap
+  ├── 00-product/         scope contract (read first), charter, goals, requirements, scenarios, roadmap
   ├── 01-research/        audits of the two reference projects, traceability
   ├── 02-architecture/    layers, macOS APIs, module contracts, runtime, storage, CLI, security
   ├── 03-algorithms/      telemetry model, pressure estimator, forecasting, attribution, leak suspicion

@@ -58,10 +58,11 @@ The conditions that would make us reopen this.
 | [003](003-ledger-format.md) | Ledger format: JSONL vs SQLite | Proposed |
 | [004](004-sampling-schedule.md) | Adaptive sampling schedule and floors | Proposed |
 | [005](005-forecast-model.md) | Forecast model complexity | Proposed |
-| [006](006-relief-actions.md) | Which relief actions are real on macOS | Proposed |
+| [006](006-relief-actions.md) | Which relief actions are real on macOS | Accepted (reasoning; scope superseded by ADR-013) |
 | [007](007-ipc-protocol.md) | CLI↔daemon IPC protocol | Proposed |
 | [008](008-resource-budget.md) | Daemon resource budget | Proposed |
 | [009](009-history-horizon.md) | History retention vs detection horizon | Proposed |
 | [010](010-fallback-triggers.md) | Fallback and degraded-mode triggers | Proposed |
 | [011](011-no-heap-migration.md) | Rejecting transparent heap migration / SSD-as-RAM | **Rejected (firm)** |
 | [012](012-no-process-kill-capability.md) | No process control capability in the product | Accepted (firm) |
+| [013](013-action-policy-revision.md) | Action policy revision: tiers and orphan handling | Accepted (v1 scope only) |
