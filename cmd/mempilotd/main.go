@@ -18,6 +18,8 @@ import (
 	"memory_pilot/internal/forecast"
 	"memory_pilot/internal/policy"
 	"memory_pilot/internal/pressure"
+	"memory_pilot/internal/reporting"
+	"memory_pilot/launchd"
 	"memory_pilot/internal/ledger"
 	model "memory_pilot/internal/model"
 	"memory_pilot/internal/selfmonitor"
@@ -95,6 +97,7 @@ func run(dataRoot, cfgPath string) error {
 	defer cancel()
 
 	mon := selfmonitor.New(clk, cfg.Overrides)
+	handler := &daemonHandler{lg: lg, mon: mon, dataRoot: cfg.DataRoot, mode: cfg.Mode}
 	est := pressure.New()
 	fc := forecast.New(criticalFreeBytes(plat))
 	eng := policy.NewEngine(policy.Mode(cfg.Mode))
@@ -119,7 +122,7 @@ func run(dataRoot, cfgPath string) error {
 					continue
 				}
 				lg.Append(map[string]any{"kind": "system", "sample": s})
-				runPipeline(lg, est, fc, eng, plat, s)
+				handler.runPipeline(est, fc, eng, plat, s)
 			}
 		}
 	}()
@@ -145,7 +148,6 @@ func run(dataRoot, cfgPath string) error {
 
 	// IPC server with the handler backed by live state
 	socket := cfg.DataRoot + "/mempilot.sock"
-	handler := &daemonHandler{lg: lg, mon: mon}
 	ipcSrv, err := ipc.Serve(ctx, socket, handler)
 	if err != nil {
 		return err
@@ -166,8 +168,9 @@ func run(dataRoot, cfgPath string) error {
 
 // runPipeline: collector → estimator → forecast → policy → ledger decision
 // record. Every decision is reconstructible from the ledger alone (bead 7eb).
-func runPipeline(lg *ledger.Ledger, est *pressure.Estimator, fc *forecast.Forecaster,
+func (h *daemonHandler) runPipeline(est *pressure.Estimator, fc *forecast.Forecaster,
 	eng *policy.Engine, plat platform.Platform, s model.SystemSample) {
+	lg := h.lg
 	totalPages := uint64(0)
 	if info := plat.Info(); info.TotalRAMBytes > 0 && s.PageBytes > 0 {
 		totalPages = info.TotalRAMBytes / s.PageBytes
@@ -188,6 +191,11 @@ func runPipeline(lg *ledger.Ledger, est *pressure.Estimator, fc *forecast.Foreca
 	lg.Append(map[string]any{"kind": "decision", "at": s.At,
 		"state": st.State, "provenance": st.Provenance, "score": st.Score,
 		"tte_s": fo.TteS, "confidence": fo.Confidence, "actionable": fo.Actionable})
+	h.lastState, h.lastProvenance, h.lastScore = string(st.State), st.Provenance, st.Score
+	h.lastLevel = int(s.KernelLevel)
+	h.lastFreeMB = float64(s.FreePages) * float64(s.PageBytes) / 1e6
+	h.lastTteS, h.lastLowerS, h.lastConf = fo.TteS, fo.LowerBoundS, fo.Confidence
+	h.lastCalibrated, h.lastActionable = fo.Calibrated, fo.Actionable
 	if st.State == pressure.Prevent || st.State == pressure.Critical {
 		lg.Append(map[string]any{"kind": "advisory", "at": s.At,
 			"strength": "informational",
@@ -204,24 +212,71 @@ func criticalFreeBytes(p platform.Platform) float64 {
 }
 
 type daemonHandler struct {
-	lg  *ledger.Ledger
-	mon *selfmonitor.Monitor
+	lg       *ledger.Ledger
+	mon      *selfmonitor.Monitor
+	dataRoot string
+	mode     string
+	lastState      string
+	lastProvenance string
+	lastScore      float64
+	lastLevel      int
+	lastFreeMB     float64
+	lastTteS, lastLowerS, lastConf float64
+	lastCalibrated, lastActionable bool
 }
 
 func (h *daemonHandler) Handle(_ context.Context, req ipc.Request) (ipc.Response, error) {
 	switch req.Op {
 	case "status":
 		s := h.mon.Snapshot()
-		b, _ := json.Marshal(map[string]any{
+		var lastPressure string
+		var lastScore float64
+		if h.lastState != "" {
+			lastPressure, lastScore = h.lastState, h.lastScore
+		} else {
+			lastPressure, lastScore = "Unknown", 0.5
+		}
+		line := reporting.RenderStatus(reporting.StatusLine{
+			PID: int32(os.Getpid()), Mode: h.mode, Pressure: lastPressure,
+			Score: lastScore, Provenance: h.lastProvenance,
+			Reliable: h.lastState != "", SelfRSSMB: s.RSSMB, SelfCPUPct: s.CPUPct,
+			LedgerMB: s.LedgerMB,
+		})
+		raw, _ := json.Marshal(map[string]any{
 			"healthy": h.mon.Healthy(), "rss_mb": s.RSSMB, "cpu_pct": s.CPUPct,
 			"goroutines": s.Goroutines, "ledger_mb": s.LedgerMB, "detail": s.Budget.Detail,
+			"kernel_level": h.lastLevel, "free_mb": h.lastFreeMB, "line": line,
 		})
-		return ipc.Response{V: ipc.ProtocolVersion, OK: true, Data: b}, nil
+		return ipc.Response{V: ipc.ProtocolVersion, OK: true, Data: raw}, nil
+	case "forecast":
+		raw, _ := json.Marshal(map[string]any{"tte_s": h.lastTteS, "lower_s": h.lastLowerS,
+			"confidence": h.lastConf, "calibrated": h.lastCalibrated, "actionable": h.lastActionable})
+		return ipc.Response{V: ipc.ProtocolVersion, OK: true, Data: raw}, nil
+	case "report", "explain", "policy":
+		recs, err := h.lg.ReadAll()
+		if err != nil {
+			return ipc.Response{V: ipc.ProtocolVersion, Error: err.Error()}, nil
+		}
+		var out []json.RawMessage
+		want := map[string]bool{"decision": true, "pressure_transition": true, "advisory": true, "action_result": true}
+		for i := len(recs) - 1; i >= 0 && len(out) < 50; i-- {
+			var probe struct {
+				Kind string `json:"kind"`
+			}
+			if json.Unmarshal(recs[i], &probe) == nil && want[probe.Kind] {
+				out = append(out, recs[i])
+			}
+		}
+		raw, _ := json.Marshal(out)
+		return ipc.Response{V: ipc.ProtocolVersion, OK: true, Data: raw}, nil
 	case "doctor":
-		probs := []string{}
-		b, _ := json.Marshal(probs)
-		return ipc.Response{V: ipc.ProtocolVersion, OK: true, Data: b}, nil
+		probs := launchd.Doctor(h.dataRoot)
+		if st, err := os.Stat(h.dataRoot + "/ledger.0001.jsonl"); err != nil {
+			probs = append(probs, "ledger not writable/missing: "+st.Name())
+		}
+		raw, _ := json.Marshal(probs)
+		return ipc.Response{V: ipc.ProtocolVersion, OK: true, Data: raw}, nil
 	default:
-		return ipc.Response{V: ipc.ProtocolVersion, Error: "op not available in phase 1"}, nil
+		return ipc.Response{V: ipc.ProtocolVersion, Error: "unknown op"}, nil
 	}
 }
