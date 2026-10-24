@@ -24,7 +24,7 @@ Measure memory pressure the way macOS defines it, forecast when it becomes dange
 
 | # | Invariant |
 |---|---|
-| SI-1 | No code path can signal, suspend or terminate a process the daemon did not spawn — absent, not disabled |
+| SI-1 | No code path can signal, suspend or terminate a process the daemon did not spawn — absent, not disabled. (Single audited exception: stopping a pre-authorized, daemon-spawned workload — ADR-014 L2, one SIGTERM call site, ST-1-gated) |
 | SI-2 | Analysis cannot act; only the executor acts, on a closed allowlist, after re-validating preconditions |
 | SI-3 | No filesystem writes outside the daemon's own data directory; no deletion of user data |
 | SI-4 | Missing evidence never improves the verdict; a dead collector never looks like calm |

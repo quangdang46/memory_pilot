@@ -3,7 +3,7 @@
 **Status:** implementation phases 0–5 built (see ../execution-records/); validation phases calendar-bound
 **Version:** 0.1.0 · 2026-10-23
 
-Memory Pilot is a macOS daemon that **prevents** memory exhaustion for long-running coding-agent workloads by measuring pressure correctly, forecasting it, attributing growth to workloads, and relieving pressure only through mechanisms proven safe — with **no ability to kill, pause, or suspend the user's processes**.
+Memory Pilot is a macOS daemon that **prevents** memory exhaustion for long-running coding-agent workloads by measuring pressure correctly, forecasting it, attributing growth to workloads, and relieving pressure only through mechanisms proven safe — with **no ability to kill, pause, or suspend processes it did not spawn**. The single exception is a narrowly-scoped stop of *pre-authorized workloads the daemon itself launched* (L2 `StopManagedWorkload`, ADR-014) — guarded by ownership, pre-authorization and identity revalidation.
 
 ---
 
@@ -111,7 +111,7 @@ schemas/                   ← NORMATIVE. Draft 2020-12, machine-checkable.
 
 ## The eight invariants (the short version)
 
-1. **SI-1 — No signaling capability.** There is no code path that can signal, suspend, or terminate a process the daemon did not spawn — not disabled by config, *absent*.
+1. **SI-1 — No signaling capability.** There is no code path that can signal, suspend, or terminate a process the daemon did not spawn — not disabled by config, *absent*. (Single audited exception per ADR-014: SIGTERM to the process group of a pre-authorized, daemon-spawned workload, in `stopOwnedChild` — one call site, ST-1-gated.)
 2. **SI-2 — Analysis cannot act.** Estimator/forecaster/attributor return values; only the executor acts, only on a closed allowlist, only after re-validating preconditions.
 3. **SI-3 — No filesystem writes outside the daemon's data root.** No deletion of user data, ever.
 4. **SI-4 — Missing evidence never improves the verdict.** A dead collector must never make the system look calm.
@@ -126,7 +126,7 @@ Full definitions with enforcement mechanisms and tests: `04-safety/safety-invari
 
 ## The five things this product will not do
 
-1. Kill, pause, freeze, or restart your applications.
+1. Kill, pause, freeze, or restart your applications. (The daemon may stop only workloads it spawned itself and you pre-authorized — ADR-014 L2.)
 2. "Free RAM" to make a number look better.
 3. Hide macOS's out-of-memory dialog.
 4. Move another app's memory to SSD.
