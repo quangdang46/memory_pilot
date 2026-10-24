@@ -2,7 +2,18 @@
 
 **A macOS daemon that prevents memory exhaustion for long-running coding-agent workloads — without ever killing your work.**
 
-> Status: **implementation, phases 0–5 built.** Phase 0 spikes measured on the target Mac mini M4 (G-P0 closed); the skeleton, platform collectors, ledger, IPC, pressure model, forecasting, attribution, classification, policy/executor safety surface, and CLI are implemented with ST-1..ST-24 green (G-P1..G-P5 recorded; see `execution-records/`). Remaining are calendar-bound validations (24h run, 72h soak, 7-day baseline, canary) and the owner freeze. The specification set lives in [`docs/`](docs/README.md).
+> Status: **implementation, phases 0–5 built and wired into the live daemon.**
+> Phase 0 spikes measured on the target Mac mini M4 (G-P0 closed). The
+> collector → estimator → forecast → attribution → classification → policy →
+> planner → executor → verification chain runs on every tick and writes a
+> record at each step; `mp run` spawns and registers managed workloads;
+> `service install` keeps the daemon running across logins. ST-1..ST-24 green
+> (G-P1..G-P5 recorded; see `execution-records/`). A 2026-10-25 repair closed
+> the gap between "the modules exist" and "the daemon uses them" — see
+> [`execution-records/2026-10-25-live-wiring-repair.md`](execution-records/2026-10-25-live-wiring-repair.md).
+> Remaining are calendar-bound validations (full-duration 24h run, 72h soak,
+> 7-day baseline, L2 canary with real workloads) and the owner freeze. The
+> specification set lives in [`docs/`](docs/README.md).
 
 ---
 

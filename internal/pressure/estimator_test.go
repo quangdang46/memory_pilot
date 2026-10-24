@@ -2,6 +2,7 @@ package pressure
 
 import (
 	"testing"
+	"time"
 
 	"memory_pilot/internal/model"
 )
@@ -132,5 +133,52 @@ func TestScoreMonotone(t *testing.T) {
 	s2 := e.score(Normal, 5, 5, in)
 	if s2 <= s1 {
 		t.Errorf("score not monotone in free: %v vs %v", s1, s2)
+	}
+}
+
+// Regression (live bug, 2026-10-24): the macOS collector never set
+// MonotonicMs, so dwell was computed from a constant 0. `dwelled` was
+// therefore always false while `immediate` let every Critical through —
+// the estimator published Critical once and could never recover, and the
+// daemon reported Critical for 45 minutes after the kernel returned to
+// Normal. A collector without a monotonic clock must still recover.
+func TestRecoveryWithoutMonotonicClock(t *testing.T) {
+	e := New()
+	in := base()
+	wall := time.Unix(1_700_000_000, 0)
+	in.Sample.At = wall
+	in.Sample.KernelLevel = model.LevelCritical
+	if got := e.Update(in); got.State != Critical {
+		t.Fatalf("initial Critical not published: %s", got.State)
+	}
+	// 40 more samples, all Normal on the kernel, still no MonotonicMs.
+	var got StateOut
+	for i := 1; i <= 40; i++ {
+		in.Sample.At = wall.Add(time.Duration(i) * 5 * time.Second)
+		in.Sample.KernelLevel = model.LevelNormal
+		got = e.Update(in)
+	}
+	if got.State != Normal {
+		t.Fatalf("latched at %s with no monotonic clock (the live bug)", got.State)
+	}
+}
+
+// Dwell must still gate flapping when the clock *is* present.
+func TestDwellStillGatesWithClock(t *testing.T) {
+	e := New()
+	in := base()
+	in.Sample.MonotonicMs = 1000
+	in.Sample.KernelLevel = model.LevelWarn
+	if got := e.Update(in); got.State != Prevent {
+		t.Fatalf("first sample should publish: %s", got.State)
+	}
+	in.Sample.MonotonicMs = 6000 // 5s later: inside the 15s dwell
+	in.Sample.KernelLevel = model.LevelNormal
+	if got := e.Update(in); got.State != Prevent {
+		t.Errorf("recovery published inside dwell window: %s", got.State)
+	}
+	in.Sample.MonotonicMs = 30000
+	if got := e.Update(in); got.State != Normal {
+		t.Errorf("recovery blocked past dwell: %s", got.State)
 	}
 }

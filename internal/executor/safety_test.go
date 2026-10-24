@@ -38,10 +38,24 @@ func TestST6RefusesStale(t *testing.T) {
 	}
 }
 
+// testActors performs the trivial self-actions and reports a real change, so
+// these tests exercise the guard/limiter path rather than an unwired actor.
+func testActors() Actors {
+	return Actors{
+		TrimOwnBuffers: func() (Effect, error) {
+			return Effect{Bytes: 8 << 20, Note: "trimmed", Changed: true}, nil
+		},
+		RotateOwnLedger: func() (Effect, error) {
+			return Effect{Note: "rotated", Changed: true}, nil
+		},
+	}
+}
+
 // ST-7: TOCTOU — decision issued under canary re-checked at execution.
 func TestST7Revalidation(t *testing.T) {
 	g := guard(policy.ModeCanary)
 	e := New(g)
+	e.Actors = testActors()
 	ok := e.Execute(context.Background(), dec(model.ActionTrimOwnBuffers, 0, ""))
 	if ok.State != "executed" {
 		t.Fatalf("expected executed, got %+v", ok)

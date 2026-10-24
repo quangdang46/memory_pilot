@@ -21,6 +21,10 @@ func TestCanary20InvocationsDevScaled(t *testing.T) {
 		Registry: reg, MaxAge: 30 * time.Second,
 	}
 	ex := executor.New(guard)
+	ex.Actors = executor.Actors{
+		TrimOwnBuffers:  func() (executor.Effect, error) { return executor.Effect{Bytes: 8 << 20, Changed: true}, nil },
+		RotateOwnLedger: func() (executor.Effect, error) { return executor.Effect{Changed: true}, nil },
+	}
 	eng := policy.NewEngine(policy.ModeCanary)
 
 	executed, refused, l2Attempts := 0, 0, 0

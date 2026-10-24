@@ -8,10 +8,10 @@ import "time"
 type Quality string
 
 const (
-	QualGood      Quality = "good"
-	QualDegraded  Quality = "degraded"
-	QualStale     Quality = "stale"
-	QualMissing   Quality = "missing"
+	QualGood     Quality = "good"
+	QualDegraded Quality = "degraded"
+	QualStale    Quality = "stale"
+	QualMissing  Quality = "missing"
 )
 
 // PressureLevel — kernel decode 1/2/4 (S-3); anything else is Unknown.
@@ -25,54 +25,74 @@ const (
 )
 
 type SystemSample struct {
-	At           time.Time
-	MonotonicMs  int64
-	PageBytes    uint64
-	FreePages    uint64 // free_count (excl. speculative, documented)
-	SpecPages    uint64
-	ActivePages  uint64
-	InactivePages uint64
-	WiredPages   uint64
+	At              time.Time
+	MonotonicMs     int64
+	PageBytes       uint64
+	FreePages       uint64 // free_count (excl. speculative, documented)
+	SpecPages       uint64
+	ActivePages     uint64
+	InactivePages   uint64
+	WiredPages      uint64
 	CompressorPages uint64
-	InternalPages uint64
-	ExternalPages uint64
-	Swapins      uint64
-	Swapouts     uint64
-	KernelLevel  PressureLevel
-	MemStatusLevel int32 // kern.memorystatus_level, -1 if unread
+	InternalPages   uint64
+	ExternalPages   uint64
+	Swapins         uint64
+	Swapouts        uint64
+	KernelLevel     PressureLevel
+	MemStatusLevel  int32 // kern.memorystatus_level, -1 if unread
 	// Quality flags per source — a dead collector never looks calm (SI-4).
-	MachStatsQuality Quality
+	MachStatsQuality   Quality
 	KernelLevelQuality Quality
 }
 
 // Process identity tuple (MP-ARCH-004): pid alone is not identity.
 type ProcessIdentity struct {
 	Pid        int32
+	Ppid       int32     // parent at sample time; 0 when unreadable
 	StartTime  time.Time // proc start abstime mapped to wall clock
 	Executable string
 }
 
 type ProcessSample struct {
-	Identity     ProcessIdentity
+	Identity       ProcessIdentity
 	FootprintBytes uint64 // phys_footprint (S-7: rusage_info_v4)
 	ResidentBytes  uint64
-	CpuUserS      float64
-	CpuSystemS    float64
-	Quality       Quality
+	CpuUserS       float64
+	CpuSystemS     float64
+	Quality        Quality
 }
 
 type Coverage struct {
 	Attempted int
 	Succeeded int
-	Denied    int
+	Denied    int // readable-but-refused: same user, permission problem
+	// Foreign counts processes owned by other users. They are not a
+	// visibility failure: a user-scope daemon was never entitled to them, and
+	// counting them as "denied" made every coverage ratio look broken
+	// (226 of 614 on a normal desktop, all root/other-user processes).
+	Foreign int
 }
 
+// VisibleRatio is the fraction of processes this daemon could ever read that
+// it actually read. Foreign processes are excluded from the denominator
+// rather than silently inflating the failure count.
+func (c Coverage) VisibleRatio() float64 {
+	inScope := c.Attempted - c.Foreign
+	if inScope <= 0 {
+		return 0
+	}
+	return float64(c.Succeeded) / float64(inScope)
+}
+
+// InScope reports how many processes this daemon was entitled to read.
+func (c Coverage) InScope() int { return c.Attempted - c.Foreign }
+
 type ProcessSnapshot struct {
-	At        time.Time
+	At          time.Time
 	MonotonicMs int64
-	Processes []ProcessSample
-	Coverage  Coverage // part of the return value, not an afterthought
-	Quality   Quality
+	Processes   []ProcessSample
+	Coverage    Coverage // part of the return value, not an afterthought
+	Quality     Quality
 }
 
 type PressureState struct {
@@ -99,18 +119,18 @@ type Forecast struct {
 type Classification string
 
 const (
-	ClassNone          Classification = "none"
-	ClassLeakLike      Classification = "leak-like"
+	ClassNone           Classification = "none"
+	ClassLeakLike       Classification = "leak-like"
 	ClassWorkloadGrowth Classification = "workload-growth"
-	ClassCacheSawtooth Classification = "cache-sawtooth"
-	ClassUnknown       Classification = "unknown"
+	ClassCacheSawtooth  Classification = "cache-sawtooth"
+	ClassUnknown        Classification = "unknown"
 )
 
 type Attribution struct {
-	At        time.Time
-	WindowS   int64
+	At      time.Time
+	WindowS int64
 	// identity-scoped deltas; never summed RSS (MP-ALG-004)
-	Growth []ProcessGrowth
+	Growth   []ProcessGrowth
 	Coverage Coverage
 	Quality  Quality
 }
@@ -133,31 +153,31 @@ const (
 )
 
 type Decision struct {
-	At         time.Time
-	NoAction   bool
-	Reason     string
-	Candidates []Candidate
+	At           time.Time
+	NoAction     bool
+	Reason       string
+	Candidates   []Candidate
 	RequiredMode string
 }
 
 type Candidate struct {
-	Kind       ActionKind
-	TargetID   string // empty or OwnedPid token; never a foreign pid
+	Kind        ActionKind
+	TargetID    string // empty or OwnedPid token; never a foreign pid
 	ExpectBytes int64
 }
 
 type ActionResult struct {
-	ActionID  string
-	Kind      ActionKind
-	State     string // executed | refused | failed
-	Verified  string // pending | confirmed | refuted
-	Evidence  map[string]string
+	ActionID string
+	Kind     ActionKind
+	State    string // executed | refused | failed
+	Verified string // pending | confirmed | refuted
+	Evidence map[string]string
 }
 
 type Event struct {
-	At    time.Time
-	Kind  string
-	Data  map[string]any
+	At   time.Time
+	Kind string
+	Data map[string]any
 }
 
 // OwnedPidRef authorizes the single signal call site (executor.stopOwnedChild).

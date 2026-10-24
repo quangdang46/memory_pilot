@@ -10,22 +10,29 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime/debug"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
+	"memory_pilot/internal/classify"
 	"memory_pilot/internal/clock"
 	"memory_pilot/internal/config"
+	"memory_pilot/internal/executor"
 	"memory_pilot/internal/forecast"
+	"memory_pilot/internal/ipc"
+	"memory_pilot/internal/ledger"
+	model "memory_pilot/internal/model"
+	"memory_pilot/internal/pipeline"
 	"memory_pilot/internal/policy"
 	"memory_pilot/internal/pressure"
 	"memory_pilot/internal/reporting"
-	"memory_pilot/launchd"
-	"memory_pilot/internal/ledger"
-	model "memory_pilot/internal/model"
 	"memory_pilot/internal/selfmonitor"
 	"memory_pilot/internal/store"
 	"memory_pilot/internal/supervisor"
-	"memory_pilot/internal/ipc"
+	"memory_pilot/internal/verify"
+	"memory_pilot/launchd"
 	"memory_pilot/platform"
 )
 
@@ -97,11 +104,44 @@ func run(dataRoot, cfgPath string) error {
 	defer cancel()
 
 	mon := selfmonitor.New(clk, cfg.Overrides)
-	handler := &daemonHandler{lg: lg, mon: mon, dataRoot: cfg.DataRoot, mode: cfg.Mode}
+
 	est := pressure.New()
 	fc := forecast.New(criticalFreeBytes(plat))
 	eng := policy.NewEngine(policy.Mode(cfg.Mode))
-	_ = eng // policy wired via runPipeline decision records; executor lands with providers (Phase 4)
+	reg := executor.NewRegistry()
+	guard := &executor.ActionGuard{
+		Mode:     func() policy.Mode { return policy.Mode(cfg.Mode) },
+		Registry: reg, MaxAge: 30 * time.Second,
+	}
+	ex := executor.New(guard)
+	// Real side effects for the self-relief actions. Reporting "executed" for
+	// an action that released nothing is a false success (SI-5); these
+	// actors measure what they changed.
+	var ownCache atomic.Int64
+	ex.Actors = executor.Actors{
+		TrimOwnBuffers: func() (executor.Effect, error) {
+			freed := ownCache.Swap(0)
+			if freed == 0 {
+				return executor.Effect{Note: "no own buffers held", Changed: false}, nil
+			}
+			debug.FreeOSMemory() // return released pages to the OS, not just the Go heap
+			return executor.Effect{Bytes: freed, Note: "own aggregation caches released", Changed: true}, nil
+		},
+		RotateOwnLedger: func() (executor.Effect, error) {
+			before := lg.SizeBytes()
+			if err := lg.Rotate(); err != nil {
+				return executor.Effect{}, err
+			}
+			return executor.Effect{Note: "ledger rotated", Changed: true,
+				Bytes: before}, nil
+		},
+	}
+	ver := verify.New()
+	pipe := pipeline.New(pipeline.Config{WindowS: attributionWindowS},
+		lg, eng, ex, ver)
+
+	handler := &daemonHandler{lg: lg, mon: mon, dataRoot: cfg.DataRoot, mode: cfg.Mode,
+		pipe: pipe, registry: reg, plat: plat, startedAt: time.Now()}
 
 	// supervisor main loop: two-cadence collection, quality-stamped, into ledger
 	go mon.Run(ctx, lg.SizeBytes)
@@ -122,7 +162,7 @@ func run(dataRoot, cfgPath string) error {
 					continue
 				}
 				lg.Append(map[string]any{"kind": "system", "sample": s})
-				handler.runPipeline(est, fc, eng, plat, s)
+				handler.runPipeline(est, fc, plat, s)
 			}
 		}
 	}()
@@ -141,7 +181,13 @@ func run(dataRoot, cfgPath string) error {
 					lg.Append(map[string]any{"kind": "process_sample_error", "at": time.Now().UTC(), "error": err.Error()})
 					continue
 				}
+				// Per-process detail never went to disk before: the ledger
+				// recorded only counts, so every attribution question ("which
+				// group grew?") was unanswerable after the fact. The pipeline
+				// summarizes it per window; this line keeps the coverage
+				// evidence for that window.
 				lg.Append(map[string]any{"kind": "processes", "coverage": snap.Coverage, "n": len(snap.Processes), "at": snap.At})
+				handler.pipe.ObserveProcesses(snap, handler.lastSystem())
 			}
 		}
 	}()
@@ -166,10 +212,11 @@ func run(dataRoot, cfgPath string) error {
 	return nil
 }
 
-// runPipeline: collector → estimator → forecast → policy → ledger decision
-// record. Every decision is reconstructible from the ledger alone (bead 7eb).
+// runPipeline: collector → estimator → forecast → attribution → classification
+// → policy → executor → ledger. Every decision is reconstructible from the
+// ledger alone (bead 7eb), and an executed action always carries a result row.
 func (h *daemonHandler) runPipeline(est *pressure.Estimator, fc *forecast.Forecaster,
-	eng *policy.Engine, plat platform.Platform, s model.SystemSample) {
+	plat platform.Platform, s model.SystemSample) {
 	lg := h.lg
 	totalPages := uint64(0)
 	if info := plat.Info(); info.TotalRAMBytes > 0 && s.PageBytes > 0 {
@@ -184,22 +231,78 @@ func (h *daemonHandler) runPipeline(est *pressure.Estimator, fc *forecast.Foreca
 			"to": st.Transition.To, "reason": st.Transition.Reason, "score": st.Score, "at": s.At})
 	}
 	fo := fc.Update(forecast.Sample{
-		MonotonicMs: s.MonotonicMs,
-		HeadroomBytes: float64(s.FreePages) * float64(s.PageBytes),
+		MonotonicMs:     s.MonotonicMs,
+		HeadroomBytes:   float64(s.FreePages) * float64(s.PageBytes),
 		CompressorPages: float64(s.CompressorPages),
 	})
 	lg.Append(map[string]any{"kind": "decision", "at": s.At,
 		"state": st.State, "provenance": st.Provenance, "score": st.Score,
 		"tte_s": fo.TteS, "confidence": fo.Confidence, "actionable": fo.Actionable})
+	h.mu.Lock()
 	h.lastState, h.lastProvenance, h.lastScore = string(st.State), st.Provenance, st.Score
 	h.lastLevel = int(s.KernelLevel)
 	h.lastFreeMB = float64(s.FreePages) * float64(s.PageBytes) / 1e6
 	h.lastTteS, h.lastLowerS, h.lastConf = fo.TteS, fo.LowerBoundS, fo.Confidence
 	h.lastCalibrated, h.lastActionable = fo.Calibrated, fo.Actionable
-	if st.State == pressure.Prevent || st.State == pressure.Critical {
-		lg.Append(map[string]any{"kind": "advisory", "at": s.At,
-			"strength": "informational",
-			"text":     "pressure elevated (" + string(st.State) + "); grouped attribution pending Phase 3 wiring"})
+	h.lastSample = s
+	h.lastForecast = forecast.ToModel(fo, s.At)
+	h.mu.Unlock()
+
+	// Window boundary: classify what grew, then let policy decide. Polar
+	// before this point the daemon wrote "attribution pending" every 5 s and
+	// never classified anything — the report the user actually needs.
+	verdicts := h.maybeCloseWindow(s)
+	results := h.pipe.Decide(context.Background(), s,
+		pipeline.PressureView{Level: s.KernelLevel, Score: st.Score, Quality: s.MachStatsQuality},
+		forecast.ToModel(fo, s.At), verdicts)
+	h.recordVerdicts(s, verdicts, results)
+}
+
+// attributionWindowS is the reporting window (5 min). Short enough that a
+// report describes "just now"; long enough that a 15 s snapshot cadence gives
+// it 20 samples per process.
+const attributionWindowS = 300
+
+// maybeCloseWindow closes the attribution window on its boundary and returns
+// the verdicts for that window.
+func (h *daemonHandler) maybeCloseWindow(s model.SystemSample) []classify.Verdict {
+	h.mu.Lock()
+	if !h.windowStart.IsZero() && s.At.Sub(h.windowStart) < attributionWindowS*time.Second {
+		h.mu.Unlock()
+		return nil
+	}
+	h.windowStart = s.At
+	h.mu.Unlock()
+	if h.pipe.Attr.ProcessCount() == 0 {
+		return nil // nothing observed yet: not a "quiet window", just no data
+	}
+	return h.pipe.CloseWindow(s)
+}
+
+// recordVerdicts writes the advisory that names the growing groups. This is
+// the sentence the user sees instead of the old "pending Phase 3 wiring" one.
+func (h *daemonHandler) recordVerdicts(s model.SystemSample, vs []classify.Verdict, results []model.ActionResult) {
+	if len(vs) == 0 {
+		return
+	}
+	for _, v := range vs {
+		strength := "informational"
+		if v.Bucket == classify.LeakSuspicion {
+			strength = "recommendation"
+		}
+		text := classify.RenderVerdict(v, v.GrowthMB)
+		if viol := classify.PhraseTest(text); len(viol) > 0 {
+			// SI-5 guard: never let a conclusion slip into report text.
+			text = "group " + v.GroupKey + " growth recorded; wording suppressed by the phrase test"
+		}
+		_ = h.lg.Append(map[string]any{"kind": "advisory", "at": s.At,
+			"strength": strength, "text": text,
+			"group": v.GroupKey, "bucket": v.Bucket, "confidence": v.Confidence})
+	}
+	for _, ar := range results {
+		_ = h.lg.Append(map[string]any{"kind": "action_effect", "at": s.At,
+			"action": string(ar.Kind), "action_id": ar.ActionID,
+			"state": ar.State, "evidence": ar.Evidence})
 	}
 }
 
@@ -212,58 +315,116 @@ func criticalFreeBytes(p platform.Platform) float64 {
 }
 
 type daemonHandler struct {
-	lg       *ledger.Ledger
-	mon      *selfmonitor.Monitor
-	dataRoot string
-	mode     string
-	lastState      string
-	lastProvenance string
-	lastScore      float64
-	lastLevel      int
-	lastFreeMB     float64
+	lg        *ledger.Ledger
+	mon       *selfmonitor.Monitor
+	dataRoot  string
+	mode      string
+	pipe      *pipeline.Pipeline
+	registry  *executor.Registry
+	plat      platform.Platform
+	startedAt time.Time
+
+	mu                             sync.Mutex
+	windowStart                    time.Time
+	lastSample                     model.SystemSample
+	lastForecast                   model.Forecast
+	lastState                      string
+	lastProvenance                 string
+	lastScore                      float64
+	lastLevel                      int
+	lastFreeMB                     float64
 	lastTteS, lastLowerS, lastConf float64
 	lastCalibrated, lastActionable bool
 }
 
-func (h *daemonHandler) Handle(_ context.Context, req ipc.Request) (ipc.Response, error) {
+// lastSystem returns the most recent system sample, for the process cadence
+// which needs a headroom reading to reconcile against.
+func (h *daemonHandler) lastSystem() model.SystemSample {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.lastSample
+}
+
+// UptimeSeconds reports daemon uptime for the status line.
+func (h *daemonHandler) UptimeSeconds() int64 {
+	return int64(time.Since(h.startedAt).Seconds())
+}
+
+func (h *daemonHandler) Handle(ctx context.Context, req ipc.Request) (ipc.Response, error) {
 	switch req.Op {
 	case "status":
 		s := h.mon.Snapshot()
-		var lastPressure string
-		var lastScore float64
-		if h.lastState != "" {
-			lastPressure, lastScore = h.lastState, h.lastScore
-		} else {
-			lastPressure, lastScore = "Unknown", 0.5
+		h.mu.Lock()
+		lastState, lastScore, lastProv := h.lastState, h.lastScore, h.lastProvenance
+		lastLevel, lastFreeMB := h.lastLevel, h.lastFreeMB
+		lastTte, lastLower, lastConf := h.lastTteS, h.lastLowerS, h.lastConf
+		lastCal, lastAct := h.lastCalibrated, h.lastActionable
+		h.mu.Unlock()
+
+		lastPressure, score := "Unknown", 0.5
+		if lastState != "" {
+			lastPressure, score = lastState, lastScore
 		}
 		line := reporting.RenderStatus(reporting.StatusLine{
-			PID: int32(os.Getpid()), Mode: h.mode, Pressure: lastPressure,
-			Score: lastScore, Provenance: h.lastProvenance,
-			Reliable: h.lastState != "", SelfRSSMB: s.RSSMB, SelfCPUPct: s.CPUPct,
+			PID: int32(os.Getpid()), UptimeS: h.UptimeSeconds(), Mode: h.mode,
+			Pressure: lastPressure, Score: score, Provenance: lastProv,
+			Reliable: lastState != "", SelfRSSMB: s.RSSMB, SelfCPUPct: s.CPUPct,
 			LedgerMB: s.LedgerMB,
 		})
 		raw, _ := json.Marshal(map[string]any{
 			"healthy": h.mon.Healthy(), "rss_mb": s.RSSMB, "cpu_pct": s.CPUPct,
 			"goroutines": s.Goroutines, "ledger_mb": s.LedgerMB, "detail": s.Budget.Detail,
-			"kernel_level": h.lastLevel, "free_mb": h.lastFreeMB, "line": line,
+			"kernel_level": lastLevel, "free_mb": lastFreeMB, "line": line,
+			"uptime_s": h.UptimeSeconds(), "mode": h.mode,
+			"tte_s": lastTte, "lower_s": lastLower, "confidence": lastConf,
+			"calibrated": lastCal, "actionable": lastAct,
+			"groups": h.pipe.LastGroups(),
 		})
 		return ipc.Response{V: ipc.ProtocolVersion, OK: true, Data: raw}, nil
 	case "forecast":
-		raw, _ := json.Marshal(map[string]any{"tte_s": h.lastTteS, "lower_s": h.lastLowerS,
-			"confidence": h.lastConf, "calibrated": h.lastCalibrated, "actionable": h.lastActionable})
+		h.mu.Lock()
+		tte, lower, conf := h.lastTteS, h.lastLowerS, h.lastConf
+		cal, act := h.lastCalibrated, h.lastActionable
+		fo := h.lastForecast
+		h.mu.Unlock()
+		line := reporting.RenderForecast(reporting.ForecastLine{
+			TteS: tte, LowerS: lower, Confidence: conf, Calibrated: cal, Actionable: act})
+		raw, _ := json.Marshal(map[string]any{"tte_s": tte, "lower_s": lower,
+			"confidence": conf, "calibrated": cal, "actionable": act,
+			"rate_bps": fo.RateBytesS, "line": line})
 		return ipc.Response{V: ipc.ProtocolVersion, OK: true, Data: raw}, nil
 	case "report", "explain", "policy":
 		recs, err := h.lg.ReadAll()
 		if err != nil {
 			return ipc.Response{V: ipc.ProtocolVersion, Error: err.Error()}, nil
 		}
+		want := map[string]bool{"decision": true, "pressure_transition": true,
+			"advisory": true, "action_result": true, "action_effect": true,
+			"attribution": true, "classification": true,
+			"policy_candidates": true, "policy_no_action": true}
+		// Scan by age, not by record count. At a 5 s system cadence plus a
+		// 15 s process cadence, the newest 50 records cover barely two
+		// minutes — less than one attribution window — so `report` found
+		// nothing to show no matter how long the daemon had been running.
+		// Keep the count bound for pathological bursts, and stop once the
+		// records are old enough to cover several windows.
+		const maxScan = 60000
+		cutoff := time.Now().Add(-45 * time.Minute)
 		var out []json.RawMessage
-		want := map[string]bool{"decision": true, "pressure_transition": true, "advisory": true, "action_result": true}
-		for i := len(recs) - 1; i >= 0 && len(out) < 50; i-- {
+		scanned := 0
+		for i := len(recs) - 1; i >= 0 && scanned < maxScan; i-- {
+			scanned++
 			var probe struct {
-				Kind string `json:"kind"`
+				Kind string    `json:"kind"`
+				At   time.Time `json:"at"`
 			}
-			if json.Unmarshal(recs[i], &probe) == nil && want[probe.Kind] {
+			if json.Unmarshal(recs[i], &probe) != nil {
+				continue
+			}
+			if !probe.At.IsZero() && probe.At.Before(cutoff) {
+				break
+			}
+			if want[probe.Kind] {
 				out = append(out, recs[i])
 			}
 		}
@@ -271,12 +432,132 @@ func (h *daemonHandler) Handle(_ context.Context, req ipc.Request) (ipc.Response
 		return ipc.Response{V: ipc.ProtocolVersion, OK: true, Data: raw}, nil
 	case "doctor":
 		probs := launchd.Doctor(h.dataRoot)
-		if st, err := os.Stat(h.dataRoot + "/ledger.0001.jsonl"); err != nil {
-			probs = append(probs, "ledger not writable/missing: "+st.Name())
+		if _, err := os.Stat(h.dataRoot + "/ledger.0001.jsonl"); err != nil {
+			// The old code called st.Name() on a nil FileInfo, which panics
+			// inside the IPC goroutine whenever the ledger was missing — the
+			// diagnosis failed exactly when it was needed.
+			probs = append(probs, "ledger missing/unwritable: "+err.Error())
 		}
 		raw, _ := json.Marshal(probs)
 		return ipc.Response{V: ipc.ProtocolVersion, OK: true, Data: raw}, nil
+	case "admit", "admit_exit":
+		return h.handleAdmit(ctx, req)
 	default:
 		return ipc.Response{V: ipc.ProtocolVersion, Error: "unknown op"}, nil
 	}
+}
+
+// handleAdmit records a managed launch (ADR-014). Two things make this safe:
+// the pid comes from the wrapper's own spawn (never from a process scan), and
+// the peer pid must match it — a different process cannot register someone
+// else's pid as stop-authorized.
+func (h *daemonHandler) handleAdmit(ctx context.Context, req ipc.Request) (ipc.Response, error) {
+	peer, hasPeer := ipc.PeerPIDFrom(ctx)
+	var arg struct {
+		Pid        int32   `json:"pid"`
+		AllowStop  bool    `json:"allow_stop"`
+		Decision   string  `json:"decision"`
+		HeadroomMB float64 `json:"headroom_mb"`
+	}
+	if err := json.Unmarshal(req.Arg, &arg); err != nil {
+		return ipc.Response{V: ipc.ProtocolVersion, Error: "bad admit arg"}, nil
+	}
+	h.mu.Lock()
+	reg := h.registry
+	h.mu.Unlock()
+	if reg == nil {
+		return ipc.Response{V: ipc.ProtocolVersion, Error: "registry unavailable"}, nil
+	}
+	switch req.Op {
+	case "admit":
+		if arg.Pid <= 0 {
+			return ipc.Response{V: ipc.ProtocolVersion, Error: "pid required"}, nil
+		}
+		// The wrapper process is the spawned child's parent. Anything else —
+		// including a local script that dials the socket directly — is a
+		// foreign caller trying to grant itself stop authorization over
+		// someone else's pid (SI-1). Refuse and record the attempt. Fail
+		// closed: without a peer pid we cannot prove parentage, and the only
+		// process that legitimately calls this op always can be identified.
+		parent := h.parentOf(arg.Pid)
+		if !hasPeer || parent != peer {
+			_ = h.lg.Append(map[string]any{"kind": "admission_refused", "at": time.Now(),
+				"pid": arg.Pid, "peer_pid": peer, "actual_parent": parent,
+				"peer_known": hasPeer,
+				"reason":     "peer is not the parent of the registered pid (SI-1)"})
+			return ipc.Response{V: ipc.ProtocolVersion,
+				Error: "refused: caller is not the parent of that pid"}, nil
+		}
+		// Identity is (pid, start); the wrapper's child is young, so a
+		// bsdinfo read gives us the real start time to revalidate against.
+		start, exe := h.processIdentity(arg.Pid)
+		auth := ""
+		if arg.AllowStop && stopArmedForMode(h.mode, true) {
+			auth = "allow-stop"
+		}
+		reg.Register(executor.OwnedPid{Pid: arg.Pid, Pgid: arg.Pid,
+			StartSec: start.Unix(), StartUsec: int64(start.Nanosecond() / 1000),
+			Auth: auth})
+		_ = h.lg.Append(map[string]any{"kind": "admission", "at": time.Now(),
+			"pid": arg.Pid, "exe": exe, "allow_stop": arg.AllowStop,
+			"stop_armed": auth != "", "decision": arg.Decision,
+			"headroom_mb": arg.HeadroomMB, "peer_pid": peer, "peer_verified": hasPeer})
+	case "admit_exit":
+		reg.Forget(arg.Pid)
+		_ = h.lg.Append(map[string]any{"kind": "admission_exit", "at": time.Now(),
+			"pid": arg.Pid, "peer_pid": peer})
+	}
+	h.mu.Lock()
+	h.pipe.Owned = reg.List()
+	h.mu.Unlock()
+	raw, _ := json.Marshal(map[string]any{"ok": true})
+	return ipc.Response{V: ipc.ProtocolVersion, OK: true, Data: raw}, nil
+}
+
+// processIdentity reads the start time of a pid we just spawned. Reading it
+// from the platform keeps one implementation of the identity tuple.
+func (h *daemonHandler) processIdentity(pid int32) (time.Time, string) {
+	if h.plat == nil {
+		return time.Now(), ""
+	}
+	snap, err := h.plat.Processes(context.Background())
+	if err != nil {
+		return time.Now(), ""
+	}
+	for _, p := range snap.Processes {
+		if p.Identity.Pid == pid {
+			return p.Identity.StartTime, p.Identity.Executable
+		}
+	}
+	return time.Now(), ""
+}
+
+// parentOf returns the parent pid of a process, read from the same collector
+// that supplies attribution (one implementation of process identity). -1
+// means "unknown"; the admit path treats unknown as refuse.
+func (h *daemonHandler) parentOf(pid int32) int32 {
+	if h.plat == nil {
+		return -1
+	}
+	snap, err := h.plat.Processes(context.Background())
+	if err != nil {
+		return -1
+	}
+	for _, p := range snap.Processes {
+		if p.Identity.Pid == pid {
+			return p.Identity.Ppid
+		}
+	}
+	return -1
+}
+
+// stopArmedForMode: prior authorization is the user's flag, but it only arms
+// in canary or enforce (ADR-014 §2 item 7). Observe records the request
+// without ever arming it, so a mode change cannot retroactively authorize a
+// stop that was launched under observe.
+func stopArmedForMode(mode string, allowStop bool) bool {
+	if !allowStop {
+		return false
+	}
+	return mode == "canary" || mode == "enforce"
 }

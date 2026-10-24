@@ -8,6 +8,7 @@ package macos
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -54,6 +55,7 @@ func (i *Impl) SampleSystem(ctx context.Context) (model.SystemSample, error) {
 	st, ret := hostStats()
 	s := model.SystemSample{
 		At:               time.Now(),
+		MonotonicMs:      machContinuousMs(),
 		PageBytes:        i.pageSize,
 		FreePages:        uint64(st.Free),
 		SpecPages:        uint64(st.Speculative),
@@ -103,9 +105,10 @@ func (i *Impl) Processes(ctx context.Context) (model.ProcessSnapshot, error) {
 	}
 	pids := listPids()
 	snap := model.ProcessSnapshot{
-		At:         time.Now(),
-		Processes:  make([]model.ProcessSample, 0, len(pids)),
-		Quality:    model.QualGood,
+		At:          time.Now(),
+		MonotonicMs: machContinuousMs(),
+		Processes:   make([]model.ProcessSample, 0, len(pids)),
+		Quality:     model.QualGood,
 	}
 	snap.Coverage.Attempted = len(pids)
 	for _, pid := range pids {
@@ -115,20 +118,41 @@ func (i *Impl) Processes(ctx context.Context) (model.ProcessSnapshot, error) {
 		}
 		ru, ok := rusageV4(pid)
 		if !ok {
-			snap.Coverage.Denied++
+			// An unprivileged daemon cannot read root or other users'
+			// processes — that is the boundary of the design, not a failure.
+			// Counting them as "denied" made coverage read 228/657 broken on
+			// an idle desktop, and a permanently-bad coverage number trains
+			// the user to ignore the one place that matters.
+			if uid, known := bsdUID(pid); !known || uid != os.Getuid() {
+				snap.Coverage.Foreign++
+			} else {
+				snap.Coverage.Denied++
+			}
 			continue
 		}
-		snap.Coverage.Succeeded++
+		// Identity tuple is (pid, start_sec, start_usec) + executable name
+		// (MP-ALG-004 §2). Without the start time a recycled pid would be
+		// read as one continuous series — the double-counting bug the spec
+		// calls out.
+		bi, bsdOK := bsdInfo(pid)
 		ident := model.ProcessIdentity{Pid: pid}
+		quality := model.QualGood
+		if bsdOK {
+			ident.StartTime = time.Unix(int64(bi.StartTvsec), int64(bi.StartTvusec)*1000)
+			ident.Executable = bi.commName()
+			ident.Ppid = int32(bi.Ppid)
+		} else {
+			quality = model.QualDegraded
+		}
+		snap.Coverage.Succeeded++
 		if st, ok := taskInfo(pid); ok {
-			ident.Executable = "" // path resolution is Phase 3 (P1PROC scope: identity tuple)
 			snap.Processes = append(snap.Processes, model.ProcessSample{
 				Identity:       ident,
 				FootprintBytes: ru.PhysFootprint,
 				ResidentBytes:  st.ResidentSize,
 				CpuUserS:       float64(ru.UserTime) / 1e9,
 				CpuSystemS:     float64(ru.SystemTime) / 1e9,
-				Quality:        model.QualGood,
+				Quality:        quality,
 			})
 		} else {
 			snap.Processes = append(snap.Processes, model.ProcessSample{

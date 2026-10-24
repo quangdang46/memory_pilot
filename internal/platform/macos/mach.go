@@ -4,54 +4,76 @@
 package macos
 
 import (
+	"sync"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
 )
 
 const (
-	HOST_VM_INFO64  = 4  // <mach/host_info.h> — NOT 10
-	vmStatsRev1Cnt  = 38 // kernel revision selector; see spike/mach/NOTES.md
+	HOST_VM_INFO64 = 4  // <mach/host_info.h> — NOT 10
+	vmStatsRev1Cnt = 38 // kernel revision selector; see spike/mach/NOTES.md
 
-	PROC_ALL_PIDS      = 1
-	PROC_PIDTASKINFO   = 4
-	PROC_PIDLISTFDS    = 1
-	RUSAGE_INFO_V4     = 4
+	PROC_ALL_PIDS       = 1
+	PROC_PIDTASKINFO    = 4
+	PROC_PIDLISTFDS     = 1
+	PROC_PIDTBSDINFO    = 3
+	RUSAGE_INFO_V4      = 4
 	kernInvalidArgument = 4
+
+	maxComLen = 16 // MAXCOMLEN
 )
+
+// procBSDidInfo mirrors <sys/proc_info.h> struct proc_bsdinfo. Field order is
+// ABI: the kernel copies sizeof(struct proc_bsdinfo) bytes; reading a shorter
+// buffer yields 0 (same failure mode documented in spike/mach/NOTES.md).
+type procBSDidInfo struct {
+	Flags, Status, Xstatus     uint32
+	Pid, Ppid                  uint32
+	Uid, Gid, Ruid, Rgid       uint32
+	Svuid, Svgid               uint32
+	Rfu1                       uint32
+	Comm                       [maxComLen]byte
+	Name                       [2 * maxComLen]byte
+	Nfiles, Pgid, Pjobc, ETdev uint32
+	ETpgid                     uint32
+	Nice                       int32
+	StartTvsec                 uint64
+	StartTvusec                uint64
+}
 
 // vmStatistics64Rev1 mirrors XNU rev1 layout (38 integer_t slots) —
 // every field we read lives in rev1. The count is an ABI revision
 // selector, not a buffer size (spike/mach/NOTES.md).
 type vmStatistics64Rev1 struct {
-	Free, Active, Inactive, Wire          uint32
-	ZeroFill, Reactivations, Pageins, Pageouts uint64
-	Faults, CowFaults, Lookups, Hits      uint64
-	Purges                                uint64
-	Purgeable, Speculative                uint32
+	Free, Active, Inactive, Wire                    uint32
+	ZeroFill, Reactivations, Pageins, Pageouts      uint64
+	Faults, CowFaults, Lookups, Hits                uint64
+	Purges                                          uint64
+	Purgeable, Speculative                          uint32
 	Decompressions, Compressions, Swapins, Swapouts uint64
-	CompressorPage, Throttled             uint32
-	External, Internal                    uint32
-	TotalUncompressedInCompressor         uint64
+	CompressorPage, Throttled                       uint32
+	External, Internal                              uint32
+	TotalUncompressedInCompressor                   uint64
 }
 
 type procTaskInfo struct {
 	VirtualSize, ResidentSize, ResidentMax, UserTime, SystemTime uint64
-	Policy                                   int32
-	Faults, Pageins, CowFaults               int32
-	MessagesSent, MessagesReceived           uint64
-	SyscallsMach, SyscallsBSD, Csw           uint64
-	Threadnum, Numrunning, Priority          int32
+	Policy                                                       int32
+	Faults, Pageins, CowFaults                                   int32
+	MessagesSent, MessagesReceived                               uint64
+	SyscallsMach, SyscallsBSD, Csw                               uint64
+	Threadnum, Numrunning, Priority                              int32
 }
 
 type rusageInfoV4 struct {
-	UUID                       [16]byte
-	UserTime, SystemTime       uint64
-	PkgIdleWkups, IntWkups     uint64
-	Pageins, WiredSize         uint64
+	UUID                        [16]byte
+	UserTime, SystemTime        uint64
+	PkgIdleWkups, IntWkups      uint64
+	Pageins, WiredSize          uint64
 	ResidentSize, PhysFootprint uint64
-	ProcStart, ProcExit        uint64
-	_                          [34]uint64
+	ProcStart, ProcExit         uint64
+	_                           [34]uint64
 }
 
 var (
@@ -62,6 +84,12 @@ var (
 	addrProcPidinfo      uintptr
 	addrProcPidRusage    uintptr
 	addrSysctlbyname     uintptr
+	addrMachContinuous   uintptr
+	addrMachTimebase     uintptr
+
+	timebaseOnce sync.Once
+	timebaseNum  uint64 = 1
+	timebaseDen  uint64 = 1
 )
 
 func loadLibSystem() error {
@@ -80,6 +108,8 @@ func loadLibSystem() error {
 		{"proc_pidinfo", &addrProcPidinfo},
 		{"proc_pid_rusage", &addrProcPidRusage},
 		{"sysctlbyname", &addrSysctlbyname},
+		{"mach_continuous_time", &addrMachContinuous},
+		{"mach_timebase_info", &addrMachTimebase},
 	} {
 		a, err := purego.Dlsym(libc, e.sym)
 		if err != nil {
@@ -150,4 +180,68 @@ func rusageV4(pid int32) (rusageInfoV4, bool) {
 	r, _, _ := purego.SyscallN(addrProcPidRusage, uintptr(pid), RUSAGE_INFO_V4,
 		uintptr(unsafe.Pointer(&ru)), 0, 0, 0)
 	return ru, r == 0
+}
+
+// bsdInfo supplies the identity tuple (start time) and the ancestry
+// (ppid) that attribution groups by. Coverage counts denied reads rather
+// than substituting zeros (SI-4).
+func bsdInfo(pid int32) (procBSDidInfo, bool) {
+	var bi procBSDidInfo
+	r, _, _ := purego.SyscallN(addrProcPidinfo, uintptr(pid), PROC_PIDTBSDINFO, 0,
+		uintptr(unsafe.Pointer(&bi)), unsafe.Sizeof(bi), 0)
+	return bi, r >= unsafe.Sizeof(bi)
+}
+
+// bsdUID returns the real uid of a process and whether it was readable. Used
+// to separate "we were never allowed to read this" (foreign user) from "we
+// should have been able to read this and could not" (real visibility loss).
+// Root and other users' processes report ok=false here, which is exactly the
+// case where a permission denial is not a visibility failure.
+func bsdUID(pid int32) (int, bool) {
+	bi, ok := bsdInfo(pid)
+	if !ok {
+		return -1, false
+	}
+	return int(bi.Uid), true
+}
+
+// commName returns pbi_comm (MAXCOMLEN, NUL-padded). The kernel truncates
+// long paths to the process name; that is the only name readable for
+// processes we do not own.
+func (b procBSDidInfo) commName() string {
+	buf := b.Comm[:]
+	for i, c := range buf {
+		if c == 0 {
+			return string(buf[:i])
+		}
+	}
+	return string(buf)
+}
+
+// machContinuousMs is the monotonic clock every rate computation depends on.
+// mach_continuous_time keeps counting across sleep, so a laptop that suspends
+// for an hour does not produce a 3600 s "gap" that reads as a rate spike.
+// Previously this field was never populated (always 0), which made the
+// pressure dwell gate unfalsifiable and latched Critical forever.
+func machContinuousMs() int64 {
+	timebaseOnce.Do(func() {
+		var tb struct{ Numer, Denom uint32 }
+		if addrMachTimebase != 0 {
+			purego.SyscallN(addrMachTimebase, uintptr(unsafe.Pointer(&tb)))
+			if tb.Numer > 0 && tb.Denom > 0 {
+				timebaseNum, timebaseDen = uint64(tb.Numer), uint64(tb.Denom)
+			}
+		}
+	})
+	if addrMachContinuous == 0 {
+		return 0
+	}
+	t, _, _ := purego.SyscallN(addrMachContinuous)
+	// ns = ticks * numer / denom; keep the multiplication in 128-bit-safe
+	// order by dividing first (numer/denom is 1/1 on arm64, 1/1 or similar
+	// elsewhere — the split keeps us exact for the integer part).
+	ticks := uint64(t)
+	ns := (ticks / timebaseDen) * timebaseNum
+	rem := (ticks % timebaseDen) * timebaseNum / timebaseDen
+	return int64(ns+rem) / 1e6
 }

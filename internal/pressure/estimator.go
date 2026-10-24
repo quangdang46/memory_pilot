@@ -52,13 +52,13 @@ type Input struct {
 }
 
 type StateOut struct {
-	State      State
-	Provenance string // "kernel" | "derived" | "unknown"
-	Score      float64
+	State         State
+	Provenance    string // "kernel" | "derived" | "unknown"
+	Score         float64
 	ScoreReliable bool
-	DwellS     int64
-	Reasons    []string
-	Transition *Transition
+	DwellS        int64
+	Reasons       []string
+	Transition    *Transition
 }
 
 type Transition struct {
@@ -95,31 +95,40 @@ func rank(s State) int {
 // Update advances the state machine one sample.
 func (e *Estimator) Update(in Input) StateOut {
 	out := e.derive(in)
-	dt := in.Sample.MonotonicMs/1000 - e.lastSampleS
+	nowS, clockOK := e.sampleSeconds(in)
+	dt := nowS - e.lastSampleS
 	if e.lastSampleS > 0 && dt < 0 {
-		dt = 0
+		dt = 0 // non-monotone (sleep/wake, clock swap): no rate, no dwell credit
 	}
-	e.lastSampleS = in.Sample.MonotonicMs / 1000
+	e.lastSampleS = nowS
 
-	// dwell gate: Critical escalates immediately, others need MinDwell
+	// Dwell is what stops a one-tick kernel blip from becoming a published
+	// state. It is only meaningful with a real clock: when the sample carries
+	// no monotonic time we must not treat "0 elapsed" as "dwelled", because
+	// that latches every escalation and blocks every recovery forever.
+	dwellS := nowS - e.candSinceS
 	if out.State != e.last {
 		if e.candidate != out.State {
 			e.candidate = out.State
-			e.candSinceS = in.Sample.MonotonicMs / 1000
+			e.candSinceS = nowS
+			dwellS = 0
 		}
-		dwelled := (in.Sample.MonotonicMs/1000-e.candSinceS) >= MinDwellS
+		dwelled := !clockOK || dwellS >= MinDwellS
 		immediate := rank(out.State) > rank(e.last) && out.State == Critical
 		if dwelled || immediate || e.last == Unknown {
 			out.Transition = &Transition{From: e.last, To: out.State, Reason: out.Provenance}
 			e.last = out.State
-			e.lastChangeS = in.Sample.MonotonicMs / 1000
+			e.lastChangeS = nowS
 		} else {
 			out.State = e.last // dwell not satisfied
 		}
 	} else {
 		e.candidate = out.State
 	}
-	out.DwellS = in.Sample.MonotonicMs/1000 - e.candSinceS
+	out.DwellS = dwellS
+	if !clockOK && out.Transition != nil {
+		out.Reasons = append(out.Reasons, "no monotonic clock: dwell gate skipped")
+	}
 
 	// SI-4: no recovery on degraded evidence
 	if rank(out.State) < rank(e.last) && qualityBad(in.Sample) {
@@ -141,6 +150,17 @@ func (e *Estimator) Update(in Input) StateOut {
 
 func qualityBad(s model.SystemSample) bool {
 	return s.MachStatsQuality == model.QualMissing || s.KernelLevelQuality == model.QualMissing
+}
+
+// sampleSeconds returns the sample's position on the monotonic clock. A
+// collector that cannot provide one still has to produce a usable dwell
+// window, so we fall back to the sample's wall time and report clockOK=false
+// so the caller can say the gate was skipped rather than silently pass.
+func (e *Estimator) sampleSeconds(in Input) (int64, bool) {
+	if in.Sample.MonotonicMs > 0 {
+		return in.Sample.MonotonicMs / 1000, true
+	}
+	return in.Sample.At.Unix(), false
 }
 
 // derive implements §4 (primary kernel path, fallback, unknown).

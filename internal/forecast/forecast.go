@@ -26,7 +26,7 @@ const (
 	CfgCoverageTarget = 0.90
 	HorizonCapS       = 7200
 
-	EprocPenaltyLog = 0.405465 // ln(1.5)
+	EprocPenaltyLog = 0.405465  // ln(1.5)
 	EprocRewardLog  = -0.405465 // ln(2/3)
 	EprocMin        = -5.0
 	EprocMax        = 3.5
@@ -35,10 +35,10 @@ const (
 )
 
 type Sample struct {
-	At           time.Time
-	MonotonicMs  int64
-	HeadroomBytes float64
-	SwapUsedBytes float64
+	At              time.Time
+	MonotonicMs     int64
+	HeadroomBytes   float64
+	SwapUsedBytes   float64
 	CompressorPages float64
 }
 
@@ -66,14 +66,14 @@ type Forecaster struct {
 	thresholdBytes float64 // Critical free-bytes level (coupled via constants module)
 
 	// EWMA state
-	prevHeadroom float64
-	prevS        int64
-	rate, accel  float64
+	prevHeadroom     float64
+	prevS            int64
+	rate, accel      float64
 	prevRateAtUpdate float64
-	residualEWMA float64
-	jitterEWMA   float64
-	prevTte      float64
-	n            int
+	residualEWMA     float64
+	jitterEWMA       float64
+	prevTte          float64
+	n                int
 
 	// burst history: (t, |rate|)
 	rateHist []struct {
@@ -136,7 +136,7 @@ func (f *Forecaster) Update(s Sample) Out {
 	// 2.2 acceleration from smoothed rate
 	if dtS > 0 && f.n > 0 {
 		smAccel := (f.rate - f.prevRateAtUpdate) / dtS
-		f.accel += 0.3*(smAccel-f.accel)
+		f.accel += 0.3 * (smAccel - f.accel)
 	}
 	f.prevRateAtUpdate = f.rate
 	f.prevHeadroom = s.HeadroomBytes
@@ -194,6 +194,11 @@ func (f *Forecaster) Update(s Sample) Out {
 	out.GuardAlarm = math.Exp(f.elog) >= EprocThreshold
 	out.FarPct = f.far()
 	out.Actionable = !out.FallbackActive && !out.GuardAlarm &&
+		// No crossing to act on ⇒ nothing to be actionable about. The old
+		// rule let tte=-1 ("no crossing in horizon") report actionable:true
+		// with lower bound 0, which reads as "pressure is about to happen"
+		// when the opposite is true.
+		out.TteS >= 0 &&
 		(!out.Calibrated || out.LowerBoundS > 0) && conf >= 0.5
 	return out
 }

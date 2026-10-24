@@ -11,7 +11,22 @@ import (
 
 const Label = "io.memorypilot.daemon"
 
-func Plist(binPath, dataRoot string) string {
+// DefaultConfigPath is where `service install` puts the generated config when
+// the caller does not supply one.
+func DefaultConfigPath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".config", "mempilot", "config.json")
+}
+
+// Plist renders the LaunchAgent. configPath is optional; when set, the daemon
+// starts with that configuration instead of the built-in observe default.
+// Without it, installing the service silently downgraded a canary install to
+// observe — the daemon ran, reported, and never acted.
+func Plist(binPath, dataRoot, configPath string) string {
+	cfgArgs := ""
+	if configPath != "" {
+		cfgArgs = fmt.Sprintf("    <string>-config</string>\n    <string>%s</string>\n", configPath)
+	}
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -22,7 +37,7 @@ func Plist(binPath, dataRoot string) string {
     <string>%s</string>
     <string>-data-root</string>
     <string>%s</string>
-  </array>
+%s  </array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>ProcessType</key><string>Standard</string>
@@ -31,7 +46,7 @@ func Plist(binPath, dataRoot string) string {
   <key>StandardErrorPath</key><string>%s/launchd.err.log</string>
 </dict>
 </plist>
-`, Label, binPath, dataRoot, dataRoot, dataRoot)
+`, Label, binPath, dataRoot, cfgArgs, dataRoot, dataRoot)
 }
 
 func userAgents() string {
@@ -39,13 +54,15 @@ func userAgents() string {
 	return filepath.Join(home, "Library", "LaunchAgents")
 }
 
-func Install(binPath, dataRoot string) (string, error) {
+// Install writes the plist and bootstraps it. An empty configPath means no
+// config file is passed.
+func Install(binPath, dataRoot, configPath string) (string, error) {
 	dir := userAgents()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
 	p := filepath.Join(dir, Label+".plist")
-	if err := os.WriteFile(p, []byte(Plist(binPath, dataRoot)), 0o644); err != nil {
+	if err := os.WriteFile(p, []byte(Plist(binPath, dataRoot, configPath)), 0o644); err != nil {
 		return "", err
 	}
 	return p, exec.Command("launchctl", "bootstrap", fmt.Sprintf("gui/%d", os.Getuid()), p).Run()

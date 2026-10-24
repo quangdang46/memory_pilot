@@ -2,13 +2,7 @@
 // never a bare claim (SI-5). "leak_suspicion", never "leak".
 package classify
 
-import (
-	"fmt"
-	"sort"
-	"time"
-
-	"memory_pilot/internal/attribution"
-)
+import "fmt"
 
 type Bucket string
 
@@ -44,11 +38,12 @@ type SeriesStats struct {
 }
 
 type Verdict struct {
-	GroupKey    string
-	Bucket      Bucket
-	Basis       []string // mandatory — no bare claims
-	Confidence  float64
+	GroupKey     string
+	Bucket       Bucket
+	Basis        []string // mandatory — no bare claims
+	Confidence   float64
 	Alternatives []Bucket // what we could NOT exclude
+	GrowthMB     int64    // growth behind this verdict; 0 when unknown
 }
 
 // Classify one group's series stats. Every path returns a basis; unknown is
@@ -168,7 +163,3 @@ func RenderVerdict(v Verdict, growthMB int64) string {
 	return fmt.Sprintf("group %s grew by %d MB — %s (confidence %.2f; basis: %v)",
 		v.GroupKey, growthMB, label, v.Confidence, v.Basis)
 }
-
-var _ = time.Now
-var _ = sort.Ints
-var _ = attribution.Identity{}

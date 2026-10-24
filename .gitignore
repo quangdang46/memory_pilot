@@ -8,6 +8,9 @@
 # Build/test artifacts
 /target/
 /bin/
+# Stray build output at the repo root (go build ./cmd/mempilot drops one here)
+/mempilot
+/mempilotd
 *.exe
 *.test
 coverage.out

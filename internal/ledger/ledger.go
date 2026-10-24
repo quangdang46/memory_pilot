@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	versionHeader = `{"ledger_version":1}`
+	versionHeader      = `{"ledger_version":1}`
 	defaultRotateBytes = 64 << 20 // 64 MB
 	defaultKeep        = 8
 )
@@ -131,6 +131,15 @@ func (l *Ledger) prune() {
 	for _, old := range files[:len(files)-l.keep] {
 		os.Remove(old) // own data dir only (SI-3)
 	}
+}
+
+// Rotate closes the current file and starts a new one (T1b). Called by the
+// executor's rotate_own_ledger action and automatically when the size cap is
+// reached.
+func (l *Ledger) Rotate() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.rotateFile()
 }
 
 // Append writes one JSON record followed by a newline and fsyncs.
