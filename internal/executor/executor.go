@@ -348,3 +348,19 @@ func boolStr(b bool) string {
 }
 
 func i64str(n int64) string { return fmt.Sprintf("%d", n) }
+
+// Reap drops registry entries whose process no longer exists. A wrapper killed
+// with an uncatchable kill never sends admit_exit, so reaping is the only thing that stops
+// a dead (or recycled) pid from remaining stop-authorized.
+func (r *Registry) Reap(alive func(pid int32) bool) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n := 0
+	for pid := range r.owned {
+		if !alive(pid) {
+			delete(r.owned, pid)
+			n++
+		}
+	}
+	return n
+}

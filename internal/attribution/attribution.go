@@ -32,6 +32,7 @@ type series struct {
 	alive     bool
 	delta     int64 // accumulated positive growth in window
 	release   int64 // accumulated frees, tracked separately
+	deadTicks int   // consecutive samples the process was absent
 
 	// Activity correlation counters (MP-ALG-005): a group that grows while
 	// its processes burn CPU is doing work; a group that grows while they sit
@@ -214,6 +215,13 @@ func (a *Attributor) Observe(snap model.ProcessSnapshot, sys model.SystemSample)
 			h.quietS += dt
 		}
 	}
+	// Retire dead series. These maps are keyed by (pid, start time), so they
+	// grow with every process the machine ever starts: builds, shells, helper
+	// XPC services. Without this the daemon leaked a few hundred bytes per
+	// process for its entire lifetime — the exact failure mode this product
+	// exists to report, in itself. A dead series is kept for one grace tick so
+	// a momentary visibility gap is not read as a process exit.
+	a.sweepDeadSeries()
 	// System reconciliation: headroom lost across the *window*, not across the
 	// last tick. The old code replaced this with the newest tick's delta, so
 	// the "observed" figure compared 15 seconds of system movement against
@@ -496,4 +504,63 @@ func maxInt64(a, b int64) int64 {
 		return a
 	}
 	return b
+}
+
+// maxRetiredSeries bounds the dead-series bookkeeping itself: a machine that
+// forks thousands of short-lived processes must not grow this map either.
+const maxRetiredSeries = 4096
+
+// sweepDeadSeries removes series for processes that have exited, after one
+// grace tick. Their accumulated growth was already reported in the window that
+// closed, and the group history keeps the long-horizon view, so nothing the
+// user can see is lost by dropping them.
+func (a *Attributor) sweepDeadSeries() {
+	for key, s := range a.series {
+		if s.alive {
+			s.deadTicks = 0
+			continue
+		}
+		s.deadTicks++
+		if s.deadTicks < 2 {
+			continue
+		}
+		delete(a.series, key)
+		delete(a.groups, key)
+	}
+	// Hard cap: if a burst of short-lived processes still outruns the sweep,
+	// drop the oldest dead entries rather than grow without bound.
+	if len(a.series) > maxRetiredSeries*4 {
+		type deadSeries struct {
+			key string
+			at  int
+		}
+		var deads []deadSeries
+		for key, s := range a.series {
+			if !s.alive {
+				deads = append(deads, deadSeries{key, s.deadTicks})
+			}
+		}
+		sort.Slice(deads, func(i, j int) bool { return deads[i].at > deads[j].at })
+		for _, d := range deads[:len(deads)/2] {
+			delete(a.series, d.key)
+			delete(a.groups, d.key)
+		}
+	}
+	// Group history: keep the most recently active groups only. History is
+	// what the classifier reads; a group nobody has seen in an hour is no
+	// longer evidence about the present.
+	if len(a.history) > maxRetiredSeries {
+		type gh struct {
+			gid string
+			at  time.Time
+		}
+		all := make([]gh, 0, len(a.history))
+		for gid, h := range a.history {
+			all = append(all, gh{gid, h.firstSeen})
+		}
+		sort.Slice(all, func(i, j int) bool { return all[i].at.After(all[j].at) })
+		for _, e := range all[maxRetiredSeries:] {
+			delete(a.history, e.gid)
+		}
+	}
 }

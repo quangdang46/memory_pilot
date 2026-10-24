@@ -314,7 +314,7 @@ func TestQuietTimeNotMultipliedByProcessCount(t *testing.T) {
 		snap := model.ProcessSnapshot{At: at, Quality: model.QualGood,
 			Coverage: model.Coverage{Attempted: n + 1, Succeeded: n + 1}}
 		snap.Processes = append(snap.Processes, model.ProcessSample{
-			Identity: model.ProcessIdentity{Pid: 10, Ppid: 1, StartTime: t0, Executable: "iTerm2"},
+			Identity:      model.ProcessIdentity{Pid: 10, Ppid: 1, StartTime: t0, Executable: "iTerm2"},
 			ResidentBytes: 50 << 20, Quality: model.QualGood})
 		for j := 0; j < n; j++ {
 			snap.Processes = append(snap.Processes, model.ProcessSample{
@@ -333,5 +333,60 @@ func TestQuietTimeNotMultipliedByProcessCount(t *testing.T) {
 	}
 	if st.QuietS < 600 {
 		t.Errorf("quiet %ds should still reach the 600s threshold honestly", st.QuietS)
+	}
+}
+
+// The series map is keyed by (pid, start time), so it grows with every process
+// the machine starts. Before eviction it never shrank: a daemon running for a
+// day on a build-heavy machine held an entry for every compiler, shell and
+// helper that had ever run. The product must not leak while reporting leaks.
+func TestDeadSeriesAreEvicted(t *testing.T) {
+	a := New(60)
+	base := time.Now()
+	// 500 short-lived processes come and go over 20 ticks.
+	for tick := 0; tick < 20; tick++ {
+		at := base.Add(time.Duration(tick) * 15 * time.Second)
+		var procs []model.ProcessSample
+		// One survivor.
+		procs = append(procs, model.ProcessSample{
+			Identity:      model.ProcessIdentity{Pid: 1, Ppid: 1, StartTime: t0, Executable: "launchd"},
+			ResidentBytes: 10 << 20, Quality: model.QualGood})
+		// 25 fresh processes this tick, each dies immediately.
+		for j := 0; j < 25; j++ {
+			pid := int32(1000 + tick*100 + j)
+			procs = append(procs, model.ProcessSample{
+				Identity: model.ProcessIdentity{Pid: pid, Ppid: 1,
+					StartTime: base.Add(time.Duration(tick) * time.Second), Executable: "clang"},
+				ResidentBytes: 5 << 20, Quality: model.QualGood})
+		}
+		s := model.ProcessSnapshot{At: at, Quality: model.QualGood,
+			Coverage:  model.Coverage{Attempted: len(procs), Succeeded: len(procs)},
+			Processes: procs}
+		a.Observe(s, sys(200000))
+		a.Window(sys(200000))
+		a.Reset()
+	}
+	// One more tick with only the survivor: the processes from the previous
+	// tick are now genuinely gone (a process seen in the latest snapshot is
+	// "alive" by definition, which is why the assertion needs this tick).
+	final := model.ProcessSnapshot{At: base.Add(20 * 15 * time.Second),
+		Quality: model.QualGood, Coverage: model.Coverage{Attempted: 1, Succeeded: 1},
+		Processes: []model.ProcessSample{{Identity: model.ProcessIdentity{
+			Pid: 1, Ppid: 1, StartTime: t0, Executable: "launchd"},
+			ResidentBytes: 10 << 20, Quality: model.QualGood}}}
+	a.Observe(final, sys(200000))
+	a.Observe(final, sys(200000)) // grace tick
+	// 500 dead processes were seen; only the live ones should remain.
+	live := 0
+	for _, s := range a.series {
+		if s.alive {
+			live++
+		}
+	}
+	if live != 1 {
+		t.Errorf("live series %d, want 1", live)
+	}
+	if n := len(a.series); n > 60 {
+		t.Errorf("series map holds %d entries after 500 short-lived processes — leaking", n)
 	}
 }

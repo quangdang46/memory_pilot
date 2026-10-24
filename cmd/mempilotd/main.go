@@ -162,7 +162,7 @@ func run(dataRoot, cfgPath string) error {
 					continue
 				}
 				lg.Append(map[string]any{"kind": "system", "sample": s})
-				handler.runPipeline(est, fc, plat, s)
+				handler.runPipeline(est, fc, ver, plat, s)
 			}
 		}
 	}()
@@ -188,6 +188,25 @@ func run(dataRoot, cfgPath string) error {
 				// evidence for that window.
 				lg.Append(map[string]any{"kind": "processes", "coverage": snap.Coverage, "n": len(snap.Processes), "at": snap.At})
 				handler.pipe.ObserveProcesses(snap, handler.lastSystem())
+				// Reap owned workloads whose wrapper died without admit_exit
+				// (forced kill, crash). Reuses this snapshot rather than paying
+				// for a second full process scan on the faster system tick. A
+				// dead pid must not stay stop-authorized: the kernel reuses pids.
+				if handler.registry != nil {
+					live := make(map[int32]bool, len(snap.Processes))
+					for _, p := range snap.Processes {
+						live[p.Identity.Pid] = true
+					}
+					handler.mu.Lock()
+					n := handler.registry.Reap(func(pid int32) bool { return live[pid] })
+					if n > 0 {
+						handler.pipe.Owned = handler.registry.List()
+					}
+					handler.mu.Unlock()
+					if n > 0 {
+						_ = lg.Append(map[string]any{"kind": "admission_reaped", "at": snap.At, "count": n})
+					}
+				}
 			}
 		}
 	}()
@@ -216,7 +235,7 @@ func run(dataRoot, cfgPath string) error {
 // → policy → executor → ledger. Every decision is reconstructible from the
 // ledger alone (bead 7eb), and an executed action always carries a result row.
 func (h *daemonHandler) runPipeline(est *pressure.Estimator, fc *forecast.Forecaster,
-	plat platform.Platform, s model.SystemSample) {
+	ver *verify.Verifier, plat platform.Platform, s model.SystemSample) {
 	lg := h.lg
 	totalPages := uint64(0)
 	if info := plat.Info(); info.TotalRAMBytes > 0 && s.PageBytes > 0 {
@@ -251,6 +270,14 @@ func (h *daemonHandler) runPipeline(est *pressure.Estimator, fc *forecast.Foreca
 	// Window boundary: classify what grew, then let policy decide. Polar
 	// before this point the daemon wrote "attribution pending" every 5 s and
 	// never classified anything — the report the user actually needs.
+	// Resolve verification windows that have elapsed. Without this the
+	// verifier only ever accumulated scheduled actions and no action ever got
+	// a confirmed/refuted verdict.
+	if n := ver.ResolveDue(st.Score, s.At); n > 0 {
+		_ = lg.Append(map[string]any{"kind": "verification", "at": s.At,
+			"resolved": n, "score_after": st.Score})
+	}
+
 	verdicts := h.maybeCloseWindow(s)
 	results := h.pipe.Decide(context.Background(), s,
 		pipeline.PressureView{Level: s.KernelLevel, Score: st.Score, Quality: s.MachStatsQuality},

@@ -114,3 +114,23 @@ func TestST24L2Boundaries(t *testing.T) {
 	}
 	_ = ar
 }
+
+// A wrapper killed with an uncatchable signal never reaches admit_exit, so its registry
+// entry has to be reaped by the daemon — otherwise a dead pid stays
+// "stop-authorized" and could match a recycled pid, and the map grows with
+// every orphaned launch.
+func TestRegistryReapsDeadPids(t *testing.T) {
+	r := NewRegistry()
+	r.Register(OwnedPid{Pid: 999999, Pgid: 999999, Auth: "allow-stop"}) // certainly dead
+	r.Register(OwnedPid{Pid: 1, Pgid: 1, Auth: "allow-stop"})           // init: alive
+	alive := func(pid int32) bool { return pid == 1 }
+	if n := r.Reap(alive); n != 1 {
+		t.Errorf("reaped %d, want 1", n)
+	}
+	if _, ok := r.Lookup(999999); ok {
+		t.Error("dead pid still registered (stop-authorized)")
+	}
+	if _, ok := r.Lookup(1); !ok {
+		t.Error("live pid was reaped")
+	}
+}
