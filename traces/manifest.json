@@ -1,13 +1,13 @@
 {
  "hashes": {
   "all-missing": "sha256:fab08e239da3df06d3b14793df1ff46ccc56253f00d4b26fe6a4b9f93ea2b5e6",
-  "burst-alloc": "sha256:51df605daabe858ac7f78137ec95c7b549fe479aac85156b4bd21b76d8c1ceef",
+  "burst-alloc": "sha256:ee494898c0ec2d9f21f62fe21659bfae1d4566482abbb46a25ef2640cd912955",
   "compressor-growth": "sha256:c0628d9a2bc003e48a390f98717d408d352da502d0d0d28db6ec66fb52c4623a",
-  "escalation-full": "sha256:f8ff3d7c1d0c7e46387b7c8be3e6ef0a0962eb4c73550592d202bb6fa92c2719",
+  "escalation-full": "sha256:9387168c46fc3c870dd84a8270c15cb357ef1cda45ce322847317198e6ab810e",
   "flap-synthetic": "sha256:8d220d0be4f06d1072903db528ad625549385564deb9a0e5c9b17cfed0fc2111",
   "kernel-unavailable": "sha256:3581ac8539382fd35e3512b41496f83e79d389792168ff496d86cef6b3ee0326",
   "quiet-idle": "sha256:d03a2bead151f53e6ba57faf7669e97c53bfe7fc73d7adc1a5229f4ef4a31e53",
-  "recovery-after-critical": "sha256:6149e02d9dcec03d66e51fc6926b9df85697416d426a293a7fbfa8f049bdaead",
+  "recovery-after-critical": "sha256:321488b9d031856ddead93c400b388451b427b67d68523a525108e14e5d12d11",
   "sawtooth-cache": "sha256:bf01b2fb581addd0dad7c218d6811862bea6c56b04843a47a775e34a7cec28a7",
   "slow-leak": "sha256:7aacbccd5317340663aafdf6780b1ec8a98dbe09e07312e16787ad4fab4c4fad",
   "steady-normal": "sha256:8485584a97efb38ebf5a6e2a5ebf513c1241c1805b5c9f217ba93f371db6fe36",

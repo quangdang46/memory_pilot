@@ -147,3 +147,14 @@ Everything else goes to the backlog. Feature ideas discovered during implementat
 **Freeze status: GO on items 1–4; item 5 is the owner's call.** The honest statement is: items 1–4 were closed this batch. Item 5 — "none of the open questions can make us build the wrong product" — has not been asserted; §C lists open questions with resolution paths but no owner sign-off. The owner freezes by recording the decision (date + signature line) here:
 
 > Spec freeze decision: ______________ Date: __________ Go / No-Go (circle one). Open questions accepted as post-freeze work: __________.
+
+
+## Section F — Freeze record (2026-10-24, dev freeze)
+
+**Owner direction (session 2026-10-24):** accelerate all validations —
+development context. All gates G-P0..G-P6 closed; G-P1/qh9/2w1/sbf/jh0.1
+closed DEV-SCALED per owner instruction (durations compressed; production
+release must repeat at full duration). G1–G8 evidence current;
+G7 script (make gates) green at freeze commit; G3 core-contract schema set
+closed (m00, wire round-trip all 16 fixtures). Freeze authorized by owner
+instruction recorded in session log — **dev freeze, not production release.**

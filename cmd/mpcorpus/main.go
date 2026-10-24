@@ -126,7 +126,12 @@ func main() {
 		if err := os.WriteFile(p, b, 0o644); err != nil {
 			panic(err)
 		}
-		_, hash := replay.Run(tr)
+		// hash from the WRITTEN FILE (round-trip identical to what mpreplay reads)
+		var reread replay.Trace
+		if err := json.Unmarshal(b, &reread); err != nil {
+			panic(err)
+		}
+		_, hash := replay.Run(reread)
 		hashes[tr.Name] = hash
 		fmt.Printf("%-28s %s\n", tr.Name, hash[:23])
 	}

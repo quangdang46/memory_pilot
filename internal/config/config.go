@@ -61,8 +61,8 @@ func (c Config) Validate() error {
 	if c.DataRoot == "" {
 		return fmt.Errorf("data_root required")
 	}
-	if c.Mode != "observe" && c.Mode != "enforce" {
-		return fmt.Errorf("mode must be observe|enforce, got %q", c.Mode)
+	if c.Mode != "observe" && c.Mode != "canary" && c.Mode != "enforce" {
+		return fmt.Errorf("mode must be observe|canary|enforce, got %q", c.Mode)
 	}
 	if c.Overrides.SystemSampleEvery < time.Second {
 		return fmt.Errorf("system_sample_every below 1s floor (hard floor, ADR-004)")
