@@ -71,7 +71,7 @@ Both reference projects are read for **design ideas only**; no source is copied.
 
 ## Next step
 
-Phase 0 verification spikes — see [`docs/00-product/roadmap.md`](docs/00-product/roadmap.md). Several architecture decisions (`[Open]` in the ADRs) must be measured on the target Mac mini M4 before they can be locked.
+Long-run validation — 24h daemon run (G-P1, in progress), 72h soak (`qh9`), 7-day baseline (`2w1`), canary (`sbf`), pre-release replay (G-P6), and the owner freeze signature (G-FREEZE). Phase 0 spikes and ADR measurements are complete (G-P0 closed).
 
 ## License
 
