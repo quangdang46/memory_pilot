@@ -13,10 +13,16 @@ func TestFiveBuckets(t *testing.T) {
 	}{
 		{"workload", SeriesStats{SlopeBytesS: 1e6, ActivityCorr: 0.8, ActivityS: 300, CoverageRatio: 0.9, DurationS: 1800}, WorkloadGrowth},
 		{"cache-plateau", SeriesStats{SlopeBytesS: 1e6, PlateauS: 1200, CacheRole: true, CoverageRatio: 0.9, DurationS: 2400}, CacheOrRetrievable},
-		{"suspicion", SeriesStats{SlopeBytesS: 1e6, QuietS: 900, ActivityCorr: 0.1, CoverageRatio: 0.9, DurationS: 2400}, LeakSuspicion},
-		{"too-short", SeriesStats{SlopeBytesS: 1e6, QuietS: 900, CoverageRatio: 0.9, DurationS: 600}, Unknown},
-		{"low-coverage", SeriesStats{SlopeBytesS: 1e6, QuietS: 900, CoverageRatio: 0.1, DurationS: 2400}, Unknown},
+		// A suspect must have grown materially; 300 MB of sustained growth with
+		// no plateau and no CPU correlation is what the bucket is for.
+		{"suspicion", SeriesStats{SlopeBytesS: 1e6, QuietS: 900, ActivityCorr: 0.1, CoverageRatio: 0.9, DurationS: 2400, GrowthBytes: 300 << 20, LongGrowthBytes: 300 << 20}, LeakSuspicion},
+		{"too-short", SeriesStats{SlopeBytesS: 1e6, QuietS: 900, CoverageRatio: 0.9, DurationS: 600, GrowthBytes: 300 << 20}, Unknown},
+		{"low-coverage", SeriesStats{SlopeBytesS: 1e6, QuietS: 900, CoverageRatio: 0.1, DurationS: 2400, GrowthBytes: 300 << 20}, Unknown},
 		{"no-growth", SeriesStats{SlopeBytesS: 0, CoverageRatio: 0.9}, Unknown},
+		// Alive 40 minutes, quiet 40 minutes, grew 1 MB: an idle process, not a
+		// suspect. Measured on a normally loaded desktop — zsh, esbuild and
+		// extensionkitser all fired here.
+		{"idle-with-trivial-growth", SeriesStats{SlopeBytesS: 1, QuietS: 2400, ActivityCorr: 0.0, CoverageRatio: 1.0, DurationS: 2400, GrowthBytes: 1 << 20, LongGrowthBytes: 1 << 20}, Unknown},
 	}
 	for _, c := range cases {
 		v := Classify(c.in)
@@ -150,5 +156,44 @@ func TestAccumulationWithoutWindowGrowth(t *testing.T) {
 		DurationS: 1800, QuietS: 1700, ActivityCorr: 0.0, SlopeBytesS: 100})
 	if v.Bucket != SubprocessAccumulation {
 		t.Errorf("got %s (%v), want subprocess_accumulation", v.Bucket, v.Basis)
+	}
+}
+
+// The warning board the owner complained about. Observed live on a normally
+// loaded desktop at 14:05, with every process above behaving exactly as usual:
+//
+//	advisory group zsh grew by 1 MB — unexplained sustained growth (suspicion)
+//	advisory group extensionkitser grew by 0 MB — unexplained sustained growth
+//	advisory group esbuild grew by 0 MB — unexplained sustained growth
+//
+// The leak branch needed only duration and quiet time, both of which every
+// long-lived idle process has. Production of the advisory is the failure, so
+// this test asserts on the bucket, not on the wording.
+func TestIdleProcessesAreNotLeakSuspects(t *testing.T) {
+	cases := []struct{ name string; mb int64 }{
+		{"zsh", 1}, {"extensionkitser", 0}, {"esbuild", 0}, {"bash", 7},
+	}
+	for _, c := range cases {
+		v := Classify(SeriesStats{GroupKey: c.name, CoverageRatio: 1.0,
+			GrowthBytes: c.mb << 20, LongGrowthBytes: c.mb << 20,
+			SlopeBytesS: 100, QuietS: 2400, ActivityS: 0,
+			ActivityCorr: 0.0, DurationS: 2400,
+			ProcessCount: 1, PeakProcessCount: 1})
+		if v.Bucket == LeakSuspicion {
+			t.Errorf("%s grew %d MB in 40 minutes and was called a leak "+
+				"suspicion: %v", c.name, c.mb, v.Basis)
+		}
+	}
+}
+
+// And real suspicion still fires: material growth, quiet, long enough.
+func TestMaterialUnexplainedGrowthIsStillSuspicion(t *testing.T) {
+	v := Classify(SeriesStats{GroupKey: "probe-leak", CoverageRatio: 1.0,
+		GrowthBytes: 300 << 20, LongGrowthBytes: 300 << 20,
+		SlopeBytesS: 100e3, QuietS: 1800, ActivityS: 0, ActivityCorr: 0.0,
+		DurationS: 2400, ProcessCount: 1, PeakProcessCount: 1})
+	if v.Bucket != LeakSuspicion {
+		t.Errorf("300 MB of quiet sustained growth: got %s (%v), want leak_suspicion",
+			v.Bucket, v.Basis)
 	}
 }

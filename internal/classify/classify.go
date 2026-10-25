@@ -31,6 +31,11 @@ const (
 	// it the group is doing nothing measurable, and a "cache" verdict would
 	// suppress whatever shape the group actually has.
 	MinCyclingBytes = 32 << 20
+	// MinSuspicionBytes is the least total growth that can be called suspicion.
+	// A group that has been alive for 20 minutes and quiet for 10 is an idle
+	// process, not a suspect; without a floor the leak branch fires on any of
+	// them (measured: zsh +1 MB, esbuild +0 MB).
+	MinSuspicionBytes = 128 << 20
 )
 
 type SeriesStats struct {
@@ -173,10 +178,24 @@ func Classify(s SeriesStats) Verdict {
 	}
 
 	// unexplained sustained growth → suspicion criteria (ALL must hold)
-	if s.QuietS >= QuietWindowS && s.DurationS >= MinSuspectWindowS && s.CoverageRatio >= MinCoverageRatio && !s.CacheRole {
+	//
+	// The group must actually have grown. Without this the branch reduced to
+	// "has been alive for 20 minutes and was quiet for 10" — true of nearly
+	// every idle process on the machine. Measured on a normally loaded desktop
+	// (14:05): zsh +1 MB, extensionkitser +0 MB, esbuild +0 MB all became
+	// leak advisories. That is precisely the warning board the owner asked
+	// never to see again, produced by the fix meant to remove it.
+	leakGrow := s.LongGrowthBytes
+	if leakGrow == 0 {
+		leakGrow = s.GrowthBytes
+	}
+	if s.QuietS >= QuietWindowS && s.DurationS >= MinSuspectWindowS &&
+		s.CoverageRatio >= MinCoverageRatio && !s.CacheRole &&
+		leakGrow >= MinSuspicionBytes {
 		v.Bucket = LeakSuspicion
 		v.Basis = append(v.Basis,
 			fmt.Sprintf("sustained %ds ≥ %ds with no plateau", s.DurationS, MinSuspectWindowS),
+			fmt.Sprintf("grew %d MB in total", leakGrow>>20),
 			fmt.Sprintf("activity flat for %ds ≥ %ds (uncorrelated)", s.QuietS, QuietWindowS),
 			"not in cache-role table",
 			fmt.Sprintf("coverage %.2f adequate", s.CoverageRatio))
