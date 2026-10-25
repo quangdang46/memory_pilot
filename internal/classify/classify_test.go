@@ -15,14 +15,14 @@ func TestFiveBuckets(t *testing.T) {
 		{"cache-plateau", SeriesStats{SlopeBytesS: 1e6, PlateauS: 1200, CacheRole: true, CoverageRatio: 0.9, DurationS: 2400}, CacheOrRetrievable},
 		// A suspect must have grown materially; 300 MB of sustained growth with
 		// no plateau and no CPU correlation is what the bucket is for.
-		{"suspicion", SeriesStats{SlopeBytesS: 1e6, QuietS: 900, ActivityCorr: 0.1, CoverageRatio: 0.9, DurationS: 2400, GrowthBytes: 300 << 20, LongGrowthBytes: 300 << 20}, LeakSuspicion},
-		{"too-short", SeriesStats{SlopeBytesS: 1e6, QuietS: 900, CoverageRatio: 0.9, DurationS: 600, GrowthBytes: 300 << 20}, Unknown},
-		{"low-coverage", SeriesStats{SlopeBytesS: 1e6, QuietS: 900, CoverageRatio: 0.1, DurationS: 2400, GrowthBytes: 300 << 20}, Unknown},
+		{"suspicion", SeriesStats{SlopeBytesS: 1e6, QuietS: 900, ActivityCorr: 0.1, CoverageRatio: 0.9, DurationS: 2400, GrowthBytes: 300 << 20, LongGrowthBytes: 300 << 20, NetGrowthBytes: 300 << 20}, LeakSuspicion},
+		{"too-short", SeriesStats{SlopeBytesS: 1e6, QuietS: 900, CoverageRatio: 0.9, DurationS: 600, GrowthBytes: 300 << 20, NetGrowthBytes: 300 << 20}, Unknown},
+		{"low-coverage", SeriesStats{SlopeBytesS: 1e6, QuietS: 900, CoverageRatio: 0.1, DurationS: 2400, GrowthBytes: 300 << 20, NetGrowthBytes: 300 << 20}, Unknown},
 		{"no-growth", SeriesStats{SlopeBytesS: 0, CoverageRatio: 0.9}, Unknown},
 		// Alive 40 minutes, quiet 40 minutes, grew 1 MB: an idle process, not a
 		// suspect. Measured on a normally loaded desktop — zsh, esbuild and
 		// extensionkitser all fired here.
-		{"idle-with-trivial-growth", SeriesStats{SlopeBytesS: 1, QuietS: 2400, ActivityCorr: 0.0, CoverageRatio: 1.0, DurationS: 2400, GrowthBytes: 1 << 20, LongGrowthBytes: 1 << 20}, Unknown},
+		{"idle-with-trivial-growth", SeriesStats{SlopeBytesS: 1, QuietS: 2400, ActivityCorr: 0.0, CoverageRatio: 1.0, DurationS: 2400, GrowthBytes: 1 << 20, LongGrowthBytes: 1 << 20, NetGrowthBytes: 1 << 20}, Unknown},
 	}
 	for _, c := range cases {
 		v := Classify(c.in)
@@ -117,7 +117,8 @@ func TestNormalAppIsNotAccumulation(t *testing.T) {
 // Real accumulation: many processes AND material growth, no CPU correlation.
 func TestRealAccumulationStillDetected(t *testing.T) {
 	v := Classify(SeriesStats{GroupKey: "probe-children", GrowthBytes: 500 << 20,
-		SlopeBytesS:      200e3, // SeriesFor supplies this from long-horizon growth
+		SlopeBytesS:    200e3, // SeriesFor supplies this from long-horizon growth
+		NetGrowthBytes: 500 << 20, LongGrowthBytes: 500 << 20,
 		PeakProcessCount: 21, ProcessCount: 21, DurationS: 2400,
 		CoverageRatio: 1, ActivityCorr: 0.0})
 	if v.Bucket != SubprocessAccumulation {
@@ -134,7 +135,7 @@ func TestHorizonMismatchIsNotCycling(t *testing.T) {
 		// This window: nothing allocated, 130 MB released.
 		GrowthBytes: 0, ReleaseBytes: 130 << 20,
 		// Lifetime: 288 MB accumulated, 130 MB released, 21 processes.
-		LongGrowthBytes: 288 << 20, LongPeakProcesses: 21,
+		LongGrowthBytes: 288 << 20, NetGrowthBytes: 288 << 20, LongPeakProcesses: 21,
 		ProcessCount: 21, PeakProcessCount: 21,
 		DurationS: 1800, QuietS: 1700, ActivityCorr: 0.0, SlopeBytesS: 100})
 	if v.Bucket == CacheOrRetrievable {
@@ -151,7 +152,7 @@ func TestHorizonMismatchIsNotCycling(t *testing.T) {
 func TestAccumulationWithoutWindowGrowth(t *testing.T) {
 	v := Classify(SeriesStats{GroupKey: "probe-children", CoverageRatio: 1.0,
 		GrowthBytes: 0, ReleaseBytes: 0,
-		LongGrowthBytes: 288 << 20, LongPeakProcesses: 21,
+		LongGrowthBytes: 288 << 20, NetGrowthBytes: 288 << 20, LongPeakProcesses: 21,
 		ProcessCount: 21, PeakProcessCount: 21,
 		DurationS: 1800, QuietS: 1700, ActivityCorr: 0.0, SlopeBytesS: 100})
 	if v.Bucket != SubprocessAccumulation {
@@ -192,11 +193,42 @@ func TestIdleProcessesAreNotLeakSuspects(t *testing.T) {
 // And real suspicion still fires: material growth, quiet, long enough.
 func TestMaterialUnexplainedGrowthIsStillSuspicion(t *testing.T) {
 	v := Classify(SeriesStats{GroupKey: "probe-leak", CoverageRatio: 1.0,
-		GrowthBytes: 300 << 20, LongGrowthBytes: 300 << 20,
+		GrowthBytes: 300 << 20, LongGrowthBytes: 300 << 20, NetGrowthBytes: 300 << 20,
 		SlopeBytesS: 100e3, QuietS: 1800, ActivityS: 0, ActivityCorr: 0.0,
 		DurationS: 2400, ProcessCount: 1, PeakProcessCount: 1})
 	if v.Bucket != LeakSuspicion {
 		t.Errorf("300 MB of quiet sustained growth: got %s (%v), want leak_suspicion",
+			v.Bucket, v.Basis)
+	}
+}
+
+// Gross growth is not size. Observed live: 46 node processes oscillating a few
+// MB per sample accumulated 11 GB of gross "growth" after an hour and 73 GB
+// after four, on a 16 GB machine where they held 3.2 GB in total. Every one of
+// those windows produced a subprocess advisory that grew more absurd each time.
+func TestOscillatingGroupIsNotAccumulating(t *testing.T) {
+	v := Classify(SeriesStats{GroupKey: "node", CoverageRatio: 1.0,
+		// A window where node moved: 400 MB of gross churn, no net change.
+		GrowthBytes: 400 << 20, ReleaseBytes: 0,
+		// Lifetime: 73 GB of gross growth, ~0 net, 46 stable processes.
+		LongGrowthBytes: 73 << 30, NetGrowthBytes: 0,
+		ProcessCount: 46, PeakProcessCount: 46, LongPeakProcesses: 46,
+		DurationS: 14205, QuietS: 10000, ActivityCorr: 0.2, SlopeBytesS: 100,
+	})
+	if v.Bucket == SubprocessAccumulation || v.Bucket == LeakSuspicion {
+		t.Errorf("a group oscillating around a constant size was called %s: %v",
+			v.Bucket, v.Basis)
+	}
+}
+
+// Real accumulation has positive net growth.
+func TestNetGrowthStillAccumulates(t *testing.T) {
+	v := Classify(SeriesStats{GroupKey: "probe-children", CoverageRatio: 1.0,
+		GrowthBytes: 0, LongGrowthBytes: 300 << 20, NetGrowthBytes: 288 << 20,
+		ProcessCount: 21, PeakProcessCount: 21, LongPeakProcesses: 21,
+		DurationS: 1800, QuietS: 1700, ActivityCorr: 0.0, SlopeBytesS: 100})
+	if v.Bucket != SubprocessAccumulation {
+		t.Errorf("288 MB of net growth across 21 processes: got %s (%v)",
 			v.Bucket, v.Basis)
 	}
 }

@@ -205,6 +205,7 @@ func (p *Pipeline) CloseWindow(sys model.SystemSample) []classify.Verdict {
 			GrowthBytes: st.GrowthBytes, ReleaseBytes: st.ReleaseBytes,
 			ProcessCount: st.ProcessCount, PeakProcessCount: st.PeakProcessCount,
 			LongGrowthBytes: st.LongGrowthBytes, LongPeakProcesses: st.LongPeakProcesses,
+			NetGrowthBytes: st.NetGrowthBytes,
 		})
 		decidedMB := decidedGrowthMB(v.Bucket, st.GrowthBytes, st.LongGrowthBytes)
 		v.GrowthMB = decidedMB
@@ -228,6 +229,7 @@ func (p *Pipeline) CloseWindow(sys model.SystemSample) []classify.Verdict {
 					// subprocess advisory showed 134 MB of window growth
 					// against a 256 MB threshold and looked like a bug.
 					"long_growth_bytes":   st.LongGrowthBytes,
+					"net_growth_bytes":    st.NetGrowthBytes,
 					"long_peak_processes": st.LongPeakProcesses,
 					"process_count":       st.ProcessCount,
 					"peak_processes":      st.PeakProcessCount,

@@ -123,12 +123,15 @@ type history struct {
 	lastSeen     time.Time // last sample where the group had a live member
 	lastGrowth   time.Time // last sample where the group grew
 	lastActivity time.Time // last sample where any member burned CPU
-	growthBytes  int64     // total positive growth since firstSeen
-	releaseBytes int64     // total frees since firstSeen
-	peakProcs    int       // high-water process count
-	activeS      int64
-	quietS       int64
-	peakGrowthMB int64
+	growthBytes  int64     // total positive growth since firstSeen (gross)
+	releaseBytes int64     // total frees since firstSeen (gross)
+	// netGrowthBytes is the signed sum: what the group actually added. A group
+	// oscillating around a constant size has large gross figures and ~0 net.
+	netGrowthBytes int64
+	peakProcs      int // high-water process count
+	activeS        int64
+	quietS         int64
+	peakGrowthMB   int64
 }
 
 func New(windowS int64) *Attributor {
@@ -244,6 +247,16 @@ func (a *Attributor) Observe(snap model.ProcessSnapshot, sys model.SystemSample)
 				a.history[gid].lastActivity = snap.At
 			}
 		}
+		// growthBytes and releaseBytes are GROSS, and that is deliberate: a
+		// sawtooth must show "allocated 400 MB, freed 400 MB" so the cycling
+		// branch can see it, and net growth would be zero.
+		//
+		// But gross growth cannot be used as "how much this group grew" for a
+		// large group: 46 node processes each moving a few MB per sample added
+		// up to 11 GB after an hour and 73 GB after four, on a 16 GB machine
+		// whose node processes held 3.2 GB in total. netGrowthBytes is the
+		// cumulative sum of signed changes, which is what the size of a group
+		// actually is over time.
 		if grew {
 			tickGrew[gid] = true
 			a.history[gid].growthBytes += d
@@ -257,6 +270,7 @@ func (a *Attributor) Observe(snap model.ProcessSnapshot, sys model.SystemSample)
 			// releasing memory.
 			a.history[gid].releaseBytes += -d
 		}
+		a.history[gid].netGrowthBytes += d
 		a.history[gid].peakGrowthMB = maxInt64(a.history[gid].peakGrowthMB, d>>20)
 	}
 	// mark disappeared series ended (rule 2) — deltas stop accumulating
@@ -529,6 +543,7 @@ func (a *Attributor) seriesForLocked(anchor string) SeriesStats {
 		// allocation and called a group that had accumulated 288 MB a cycling
 		// cache (run20, probe-children).
 		st.LongGrowthBytes = h.growthBytes
+		st.NetGrowthBytes = h.netGrowthBytes
 		st.LongPeakProcesses = h.peakProcs
 		if h.lastGrowth.After(h.lastActivity) && !h.lastActivity.IsZero() {
 			st.QuietS = int64(a.now.Sub(h.lastActivity).Seconds())
@@ -602,8 +617,11 @@ type SeriesStats struct {
 	// window's growth against a lifetime's release is not a comparison.
 	LongGrowthBytes   int64
 	LongPeakProcesses int
-	ProcessCount      int
-	PeakProcessCount  int
+	// NetGrowthBytes is the signed lifetime change: what the group actually
+	// added, as opposed to the sum of every upward step.
+	NetGrowthBytes   int64
+	ProcessCount     int
+	PeakProcessCount int
 }
 
 // groupFor: nearest-anchor with sticky membership (§4).

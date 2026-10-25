@@ -359,6 +359,7 @@ func TestCyclingGroupIsNotALeak(t *testing.T) {
 func TestProcessAccumulationReachable(t *testing.T) {
 	v := classify.Classify(classify.SeriesStats{
 		GroupKey: "probe-children", SlopeBytesS: 2e6, GrowthBytes: 400 << 20,
+		NetGrowthBytes: 400 << 20, LongGrowthBytes: 400 << 20,
 		ReleaseBytes: 0, DurationS: 2400, ActivityCorr: 0.0, QuietS: 2000,
 		CoverageRatio: 0.99, ProcessCount: 20, PeakProcessCount: 24,
 	})

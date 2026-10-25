@@ -73,6 +73,12 @@ type SeriesStats struct {
 	// 288 MB across many windows (run20, probe-children).
 	LongGrowthBytes   int64
 	LongPeakProcesses int
+	// NetGrowthBytes is what the group actually added over its life: the
+	// signed sum of its changes. LongGrowthBytes is gross — every upward step
+	// added together — which is right for spotting a sawtooth and wrong for
+	// asking "how big did this get". Measured: node reported 73 GB of gross
+	// growth over four hours while holding 3.2 GB in 46 oscillating processes.
+	NetGrowthBytes int64
 }
 
 type Verdict struct {
@@ -138,8 +144,12 @@ func Classify(s SeriesStats) Verdict {
 	// window it is judged on, and would be invisible if only that window
 	// counted. Measured in run20: probe-children held 288 MB across 21
 	// processes and reported growth 0 MB, so this branch could not fire.
-	accGrow, accPeak := s.LongGrowthBytes, s.PeakProcessCount
-	if accGrow == 0 {
+	// Net growth, not gross: 46 node processes oscillating by a few MB per
+	// sample accumulate 70 GB of gross "growth" over four hours on a machine
+	// where they hold 3.2 GB. Net is what the group actually added.
+	accGrow, accPeak := s.NetGrowthBytes, s.PeakProcessCount
+	if s.DurationS == 0 {
+		// No long-horizon record at all: judge on this window alone.
 		accGrow = s.GrowthBytes
 	}
 	if accPeak < s.LongPeakProcesses {
@@ -185,8 +195,8 @@ func Classify(s SeriesStats) Verdict {
 	// (14:05): zsh +1 MB, extensionkitser +0 MB, esbuild +0 MB all became
 	// leak advisories. That is precisely the warning board the owner asked
 	// never to see again, produced by the fix meant to remove it.
-	leakGrow := s.LongGrowthBytes
-	if leakGrow == 0 {
+	leakGrow := s.NetGrowthBytes
+	if s.DurationS == 0 {
 		leakGrow = s.GrowthBytes
 	}
 	if s.QuietS >= QuietWindowS && s.DurationS >= MinSuspectWindowS &&
