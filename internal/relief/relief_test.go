@@ -172,10 +172,10 @@ func TestRankPrefersReliefPerRisk(t *testing.T) {
 
 // The gate that stops the tool narrating work: growth alone is not news.
 func TestGrowthAloneIsNotRecommended(t *testing.T) {
-	if ShouldRecommend("leak_suspicion", true, false) {
+	if ShouldRecommend("leak_suspicion", false, false) {
 		t.Error("a growing group with no releasable candidate was recommended")
 	}
-	if !ShouldRecommend("leak_suspicion", true, true) {
+	if !ShouldRecommend("leak_suspicion", false, true) {
 		t.Error("a real candidate was not recommended")
 	}
 }
@@ -328,5 +328,27 @@ func TestUnobservedParentIsNotAbandonment(t *testing.T) {
 	joined := strings.Join(cs[0].Evidence, " ")
 	if !strings.Contains(joined, "not observed") {
 		t.Errorf("evidence does not say the parent is unknown: %v", cs[0].Evidence)
+	}
+}
+
+// The warning board was 98 advisories in 45 minutes at Normal pressure. Growth
+// is the cost of work unless the machine is actually short of memory.
+func TestAdvisoryNeedsPressureOrACandidate(t *testing.T) {
+	if ShouldRecommend("leak_suspicion", false, false) {
+		t.Error("growth advised at Normal pressure with nothing releasable")
+	}
+	if ShouldRecommend("subprocess_accumulation", false, false) {
+		t.Error("accumulation advised at Normal pressure with nothing releasable")
+	}
+	if !ShouldRecommend("leak_suspicion", true, false) {
+		t.Error("a leak suspicion at pressure was not advised")
+	}
+	if !ShouldRecommend("workload_growth", false, true) {
+		t.Error("a releasable candidate at Normal pressure was not advised")
+	}
+	// Even under pressure, growth explained by work is not a decision the
+	// owner can make; the relief path covers what they can act on.
+	if ShouldRecommend("workload_growth", true, false) {
+		t.Error("workload growth advised under pressure")
 	}
 }

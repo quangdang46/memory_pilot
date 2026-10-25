@@ -416,10 +416,23 @@ func priority(c Candidate) float64 {
 // all at Normal pressure, most for groups that were working (Code at 62% CPU,
 // Chrome loading pages). The design's L1 says "record the finding, prepare a
 // plan, without acting" — which is not the same as interrupting.
+// climbing reports that the machine is under pressure now. Without it the
+// answer is no: at Normal, a group growing is the cost of the work the owner
+// asked for, and announcing it is the warning board they asked never to see
+// again.
 func ShouldRecommend(bucket classify.Bucket, climbing bool, hasCandidate bool) bool {
 	if hasCandidate {
 		return true // an abandoned process is worth one line
 	}
-	// A group merely growing is not news while the machine is comfortable.
+	if !climbing {
+		return false
+	}
+	// Under pressure, the shapes that are not explained by work are worth
+	// naming. Workload growth under pressure is the machine doing its job
+	// slowly, not a decision the owner can make.
+	switch bucket {
+	case classify.LeakSuspicion, classify.SubprocessAccumulation:
+		return true
+	}
 	return false
 }

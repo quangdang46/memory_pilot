@@ -439,7 +439,7 @@ func (h *daemonHandler) recordVerdicts(s model.SystemSample, vs []classify.Verdi
 		// with nothing releasable offers nothing. Rate-limited to one per group
 		// per hour: repeating the same sentence every five minutes is how a
 		// warning list becomes something the reader stops seeing.
-		if !relief.ShouldRecommend(v.Bucket, false, false) {
+		if !relief.ShouldRecommend(v.Bucket, s.KernelLevel >= model.LevelWarn, false) {
 			continue
 		}
 		if last, ok := advisoryAt[v.GroupKey]; ok &&
