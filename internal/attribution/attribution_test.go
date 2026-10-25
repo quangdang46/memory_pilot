@@ -1035,3 +1035,58 @@ func TestMembersLeavingBaselineAreNotNegativeGrowth(t *testing.T) {
 			st.NetGrowthBytes>>20)
 	}
 }
+
+func snapWithParents(entries [][3]any) model.ProcessSnapshot {
+	s := model.ProcessSnapshot{At: time.Now(), Quality: model.QualGood,
+		Coverage: model.Coverage{Attempted: len(entries), Succeeded: len(entries)}}
+	for _, e := range entries {
+		pid, ppid, bytes := e[0].(int32), e[1].(int32), e[2].(uint64)
+		s.Processes = append(s.Processes, model.ProcessSample{
+			Identity:      model.ProcessIdentity{Pid: pid, Ppid: ppid, StartTime: t0},
+			ResidentBytes: bytes, Quality: model.QualGood})
+	}
+	return s
+}
+
+// macOS reparents an orphan to pid 1. That transition — "was under a parent,
+// now under launchd" — is the only direct evidence that a parent exited.
+func TestReparentedOrphanIsReportedParentGone(t *testing.T) {
+	a := New(60)
+	a.Observe(snapWithParents([][3]any{
+		{int32(100), int32(1), uint64(200 << 20)},
+		{int32(200), int32(100), uint64(600 << 20)},
+	}), sys(200000))
+	a.Observe(snapWithParents([][3]any{
+		{int32(200), int32(1), uint64(600 << 20)},
+	}), sys(200000))
+	var found bool
+	for _, m := range a.Members() {
+		if m.Pid == 200 {
+			found = true
+			if !m.ParentGone {
+				t.Errorf("reparented orphan reported ParentGone=false: %+v", m)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("pid 200 missing from Members")
+	}
+}
+
+// A process launchd started directly was never under a parent, so nothing
+// exited. Reading its ppid of 1 as "parent gone" is what put Finder and the
+// VM on the first live recommendation.
+func TestLaunchdServiceIsNotParentGone(t *testing.T) {
+	a := New(60)
+	a.Observe(snapWithParents([][3]any{
+		{int32(300), int32(1), uint64(300 << 20)},
+	}), sys(200000))
+	a.Observe(snapWithParents([][3]any{
+		{int32(300), int32(1), uint64(300 << 20)},
+	}), sys(200000))
+	for _, m := range a.Members() {
+		if m.Pid == 300 && m.ParentGone {
+			t.Errorf("launchd-started service reported ParentGone=true: %+v", m)
+		}
+	}
+}

@@ -96,9 +96,11 @@ type Member struct {
 	// QuietFor is how long since this process last used CPU.
 	QuietFor time.Duration
 	// ParentAlive reports whether the process that started it still runs.
-	// A live parent does not make the child useful, but a dead one is strong
-	// evidence it is abandoned.
 	ParentAlive bool
+	// ParentGone is true only when this process was observed under a parent
+	// that has since exited. A process launchd started directly has no parent
+	// in the ordinary sense and is not evidence of anything.
+	ParentGone bool
 }
 
 // Assess turns facts into a candidate with its three numbers.
@@ -181,6 +183,48 @@ func Assess(f GroupFacts) Candidate {
 	return c
 }
 
+// protectedExe lists processes that must never be named as releasable, whatever
+// their footprint or idle time. These are not heuristics: closing any of them
+// breaks the session, the desktop, or the system.
+//
+// Measured in the first live L1 run (23:51): 39 candidates including Finder,
+// com.apple.Virtualization.VirtualMachine, Google Chrome Helper and Code Helper.
+// A recommendation that tells the owner to close Finder is not a
+// recommendation, it is a hazard.
+var protectedExe = map[string]bool{
+	// the desktop and window server
+	"Finder": true, "Dock": true, "WindowManager": true, "SystemUIServer": true,
+	// virtualisation: closing it destroys a running VM
+	"com.apple.Virtualization.VirtualMachine": true,
+	"VirtualMachine": true,
+	// system services that appear as ordinary processes
+	"launchd": true, "cfprefsd": true, "mds": true, "mds_stores": true,
+	"WindowServer": true, "loginwindow": true, "coreaudiod": true,
+	// the daemon itself
+	"mempilotd": true,
+}
+
+// protectedPrefix covers families whose exact names vary by build.
+var protectedPrefix = []string{
+	"com.apple.",      // Apple system services and frameworks
+	"Google Chrome H", // helpers belong to their browser, not to the user
+	"Code Helper",     // same for the IDE
+	"Electron Helper",
+	"VTDecoder",
+}
+
+func isProtected(exe string) bool {
+	if protectedExe[exe] {
+		return true
+	}
+	for _, p := range protectedPrefix {
+		if len(exe) >= len(p) && exe[:len(p)] == p {
+			return true
+		}
+	}
+	return false
+}
+
 // AssessMembers returns candidates for individual processes inside a group,
 // which is where the actionable cases live.
 //
@@ -197,6 +241,9 @@ func AssessMembers(f GroupFacts) []Candidate {
 		if m.QuietFor < MinQuietForSuspicious {
 			continue // it is working
 		}
+		if isProtected(m.Exe) {
+			continue // never name a process whose loss breaks the session
+		}
 		c := Candidate{
 			Group:            fmt.Sprintf("%s (pid %d)", m.Exe, m.Pid),
 			InterruptionRisk: 0.8,
@@ -206,20 +253,26 @@ func AssessMembers(f GroupFacts) []Candidate {
 			fmt.Sprintf("holds %d MB, no CPU for %s",
 				m.Footprint>>20, m.QuietFor.Round(time.Second)))
 
+		// Three parent states, and only one of them is evidence:
+		//   ParentGone  — was under a parent, parent exited, macOS reparented
+		//                 it to launchd. Abandoned.
+		//   ParentAlive — the parent still runs, so a session may own it.
+		//   neither     — the parent is outside coverage (75% on this machine).
+		//                 Unknown, and stated as unknown.
 		switch {
-		case !m.ParentAlive && m.QuietFor >= MinQuietForAbandoned:
+		case m.ParentGone && m.QuietFor >= MinQuietForAbandoned:
 			c.State = StateAbandoned
 			c.AbandonmentConfidence = 0.85
 			c.InterruptionRisk = 0.15
 			c.Evidence = append(c.Evidence, "parent gone: nothing is waiting on it")
-		case !m.ParentAlive:
+		case m.ParentGone:
 			c.State = StateSuspicious
 			c.AbandonmentConfidence = 0.5
 			c.InterruptionRisk = 0.3
 			c.Evidence = append(c.Evidence,
 				fmt.Sprintf("parent gone, quiet %s — short of the %s bar",
 					m.QuietFor.Round(time.Second), MinQuietForAbandoned))
-		case m.QuietFor >= MinQuietForAbandoned:
+		case m.QuietFor >= MinQuietForAbandoned && m.ParentAlive:
 			// A live parent that is not using it. This is the rust-analyzer
 			// case: the session that spawned it is still open but idle, and the
 			// child has held gigabytes without doing anything for hours.
@@ -230,6 +283,16 @@ func AssessMembers(f GroupFacts) []Candidate {
 				"parent still running, but this process has done no work for "+
 					m.QuietFor.Round(time.Second).String()+" — closing it loses nothing "+
 					"it is currently doing, though the parent may restart it")
+		case m.QuietFor >= MinQuietForAbandoned:
+			// The parent is not in coverage, so whether anything owns this
+			// process is unknown. Saying "parent gone" here would be a guess,
+			// and the first live run made exactly that guess about Finder.
+			c.State = StateSuspicious
+			c.AbandonmentConfidence = 0.45
+			c.InterruptionRisk = 0.6
+			c.Evidence = append(c.Evidence,
+				"parent not observed — it may have exited or may be outside "+
+					"sampling coverage; this is not evidence either way")
 		default:
 			c.AbandonmentConfidence = 0.3
 		}

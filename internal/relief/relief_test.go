@@ -233,7 +233,7 @@ func TestBusyMemberIsNotACandidate(t *testing.T) {
 func TestSmallIdleMemberIgnored(t *testing.T) {
 	f := GroupFacts{Group: "claude", Members: []Member{
 		{Pid: 1, Exe: "helper", Footprint: 40 << 20,
-			QuietFor: 2 * time.Hour, ParentAlive: false},
+			QuietFor: 2 * time.Hour, ParentAlive: false, ParentGone: true},
 	}}
 	if cs := AssessMembers(f); len(cs) != 0 {
 		t.Errorf("40 MB idle process produced a candidate")
@@ -244,7 +244,7 @@ func TestSmallIdleMemberIgnored(t *testing.T) {
 func TestOrphanedMemberIsAbandoned(t *testing.T) {
 	f := GroupFacts{Group: "x", Members: []Member{
 		{Pid: 9, Exe: "build", Footprint: 500 << 20,
-			QuietFor: 30 * time.Minute, ParentAlive: false},
+			QuietFor: 30 * time.Minute, ParentAlive: false, ParentGone: true},
 	}}
 	cs := AssessMembers(f)
 	if len(cs) != 1 || cs[0].State != StateAbandoned {
@@ -284,5 +284,49 @@ func TestIdleProcessesAreNamedWithTheirRelief(t *testing.T) {
 	}
 	if strings.Contains(txt, "node (pid 96329)") {
 		t.Errorf("a busy process was named as releasable:\n%s", txt)
+	}
+}
+
+// The first live L1 run (23:51) named Finder, the VM and every Chrome helper as
+// releasable. Two separate causes: protected processes were eligible at all, and
+// a process launchd started directly was read as "parent gone".
+func TestSystemProcessesAreNeverCandidates(t *testing.T) {
+	group := GroupFacts{Members: []Member{
+		{Pid: 1, Exe: "Finder", Footprint: 300 << 20, QuietFor: time.Hour,
+			ParentGone: true},
+		{Pid: 2, Exe: "com.apple.Virtualization.VirtualMachine",
+			Footprint: 1796 << 20, QuietFor: time.Hour, ParentGone: true},
+		{Pid: 3, Exe: "Google Chrome Helper (Renderer)",
+			Footprint: 900 << 20, QuietFor: time.Hour, ParentGone: true},
+		{Pid: 4, Exe: "Code Helper (Renderer)", Footprint: 700 << 20,
+			QuietFor: time.Hour, ParentGone: true},
+		{Pid: 5, Exe: "WindowServer", Footprint: 800 << 20, QuietFor: time.Hour,
+			ParentGone: true},
+	}}
+	if cs := AssessMembers(group); len(cs) != 0 {
+		for _, c := range cs {
+			t.Errorf("named %q as releasable", c.Group)
+		}
+	}
+}
+
+// An unobserved parent is not a dead parent. 25% of this machine is outside
+// coverage, and calling that "parent gone" is the guess that produced the
+// dangerous list.
+func TestUnobservedParentIsNotAbandonment(t *testing.T) {
+	f := GroupFacts{Members: []Member{
+		{Pid: 9, Exe: "some-build", Footprint: 600 << 20,
+			QuietFor: 30 * time.Minute}, // neither ParentAlive nor ParentGone
+	}}
+	cs := AssessMembers(f)
+	if len(cs) != 1 {
+		t.Fatalf("%d candidates, want 1", len(cs))
+	}
+	if cs[0].State == StateAbandoned {
+		t.Errorf("unobserved parent read as abandoned: %v", cs[0].Evidence)
+	}
+	joined := strings.Join(cs[0].Evidence, " ")
+	if !strings.Contains(joined, "not observed") {
+		t.Errorf("evidence does not say the parent is unknown: %v", cs[0].Evidence)
 	}
 }

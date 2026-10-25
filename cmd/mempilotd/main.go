@@ -317,7 +317,7 @@ func (h *daemonHandler) recommendRelief(s model.SystemSample, score float64) {
 	for _, m := range members {
 		facts = append(facts, relief.Member{
 			Pid: m.Pid, Exe: m.Exe, Footprint: m.Footprint,
-			QuietFor: m.QuietFor, ParentAlive: m.ParentAlive,
+			QuietFor: m.QuietFor, ParentAlive: m.ParentAlive, ParentGone: m.ParentGone,
 		})
 	}
 	cs := relief.AssessMembers(relief.GroupFacts{Members: facts})

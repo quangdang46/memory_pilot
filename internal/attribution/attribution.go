@@ -30,8 +30,14 @@ func (id Identity) Key() string {
 }
 
 type series struct {
-	id        Identity
-	ppid      int32
+	id   Identity
+	ppid int32
+	// hadParent records that this process was once observed under a parent
+	// other than launchd. macOS reparents an orphan to pid 1, so "ppid was >1
+	// and is now 1" is the only direct evidence that its parent exited. Without
+	// this, "no parent series" is ambiguous: the parent may simply be outside
+	// the 75% coverage this machine gives.
+	hadParent bool
 	prevBytes int64 // phys_footprint, not resident: see footprintAt
 	prevCPU   float64
 	cpuDelta  float64 // accumulated CPU seconds in the window
@@ -258,6 +264,9 @@ func (a *Attributor) Observe(snap model.ProcessSnapshot, sys model.SystemSample)
 		s.prevBytes = now
 		s.alive = true
 		s.ppid = p.Identity.Ppid // reparenting is recorded, membership is sticky (§4.2)
+		if s.ppid > 1 {
+			s.hadParent = true
+		}
 		if d > 0 {
 			s.delta += d
 		} else {
@@ -1096,6 +1105,7 @@ type MemberFact struct {
 	Footprint   int64
 	QuietFor    time.Duration
 	ParentAlive bool
+	ParentGone  bool
 }
 
 // Members returns every live process with the facts the relief engine needs.
@@ -1118,13 +1128,20 @@ func (a *Attributor) Members() []MemberFact {
 				quiet = 0
 			}
 		}
+		// ParentGone means the parent we saw has exited. macOS reparents an
+		// orphan to pid 1, so the evidence is "was under a parent, now under
+		// launchd". Measured in the first live L1 run: 39 candidates including
+		// Finder, the VM and every Chrome helper, all labelled "parent gone"
+		// because their ppid is 1 — which is just how launchd starts a service.
 		_, parentAlive := a.series[identityKeyOf(a, s.ppid)]
 		if s.ppid <= 1 {
 			parentAlive = false
 		}
+		parentGone := s.hadParent && s.ppid <= 1
 		out = append(out, MemberFact{
 			Pid: s.id.Pid, Exe: s.id.Exe, Group: s.group,
-			Footprint: s.prevBytes, QuietFor: quiet, ParentAlive: parentAlive,
+			Footprint: s.prevBytes, QuietFor: quiet,
+			ParentAlive: parentAlive, ParentGone: parentGone,
 		})
 	}
 	return out
