@@ -27,6 +27,10 @@ const (
 	// fired on zsh (0 MB), Chrome (12 MB) and node (110 MB) in one window.
 	MinProcessGrowth     = 8
 	MinAccumulationBytes = 256 << 20
+	// MinCyclingBytes is the least churn that can be called "cycling". Below
+	// it the group is doing nothing measurable, and a "cache" verdict would
+	// suppress whatever shape the group actually has.
+	MinCyclingBytes = 32 << 20
 )
 
 type SeriesStats struct {
@@ -88,11 +92,16 @@ func Classify(s SeriesStats) Verdict {
 	// accumulating anything, whatever its gross growth number says. This is
 	// checked first because it is a direct measurement of what happened, not
 	// an inference from the shape of a curve.
-	// Both sides must be non-zero: "released 0 while growing 0" is a group
-	// that did nothing, not a cycling cache. Measured: probe-children with
-	// zero growth and zero release was classified a cache purely because
-	// 0 >= 0.
-	if s.ReleaseBytes > 0 && s.GrowthBytes > 0 && s.ReleaseBytes >= s.GrowthBytes {
+	// Both sides must be non-zero AND the traffic must be worth explaining:
+	// "released 0 while growing 0" is a group that did nothing, not a cycling
+	// cache (measured: probe-children was classified a cache purely because
+	// 0 >= 0). The same mistake at a smaller scale survived that fix: a
+	// subprocess group was called a cycling cache on "released 1 MB while
+	// growing 0 MB" — one megabyte of churn in twenty minutes is noise, and
+	// calling it a cache hides the process accumulation that was actually
+	// happening (run16, 11:50).
+	if s.ReleaseBytes >= MinCyclingBytes && s.GrowthBytes > 0 &&
+		s.ReleaseBytes >= s.GrowthBytes {
 		v.Bucket = CacheOrRetrievable
 		v.Basis = append(v.Basis,
 			fmt.Sprintf("released %d MB while growing %d MB — cycling, not accumulating",

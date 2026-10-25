@@ -57,6 +57,32 @@ func TestZeroGrowthZeroReleaseIsNotCycling(t *testing.T) {
 	}
 }
 
+// A few megabytes of churn is not a cycling cache. Measured in run16:
+// probe-children (a shape that was accumulating 20 subprocesses) was called
+// cache_or_retrievable on the basis "released 1 MB while growing 0 MB",
+// because the cycling test only required both sides to be non-zero.
+func TestNegligibleChurnIsNotCycling(t *testing.T) {
+	v := Classify(SeriesStats{GroupKey: "probe-children", CoverageRatio: 1.0,
+		GrowthBytes: 0, ReleaseBytes: 1 << 20, SlopeBytesS: 100,
+		ProcessCount: 21, PeakProcessCount: 21, DurationS: 2400,
+		ActivityCorr: 0.0, QuietS: 2000})
+	if v.Bucket == CacheOrRetrievable {
+		t.Errorf("1 MB of churn classified as a cycling cache: %v", v.Basis)
+	}
+}
+
+// Real cycling still classifies: a browser releasing what it allocates.
+func TestRealCyclingStillDetected(t *testing.T) {
+	v := Classify(SeriesStats{GroupKey: "Google Chrome", CoverageRatio: 1.0,
+		GrowthBytes: 400 << 20, ReleaseBytes: 900 << 20, SlopeBytesS: 100,
+		ProcessCount: 12, PeakProcessCount: 12, DurationS: 2400,
+		ActivityCorr: 0.2, QuietS: 2000})
+	if v.Bucket != CacheOrRetrievable {
+		t.Errorf("browser cycling 400 MB in / 900 MB out: got %s (%v), want cache",
+			v.Bucket, v.Basis)
+	}
+}
+
 // A normal app with many processes and modest growth is not accumulation.
 // Measured: the first version fired on zsh (0 MB), Chrome (12 MB) and node
 // (110 MB) in a single window, because "has many processes" is true of every
