@@ -59,6 +59,11 @@ type ProcessSample struct {
 	ResidentBytes  uint64
 	CpuUserS       float64
 	CpuSystemS     float64
+	// CpuUnavailable marks a sample whose CPU accounting could not be read.
+	// Its CPU fields are zero because they are unknown, not because the
+	// process is idle; any consumer that turns "no CPU delta" into a claim
+	// must check this first.
+	CpuUnavailable bool
 	Quality        Quality
 }
 

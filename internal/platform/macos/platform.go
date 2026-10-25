@@ -155,11 +155,17 @@ func (i *Impl) Processes(ctx context.Context) (model.ProcessSnapshot, error) {
 				Quality:        quality,
 			})
 		} else {
+			// No task info means no CPU accounting, not zero CPU. The window
+			// carries this as a degraded sample, and attribution refuses to
+			// start a quiet clock on one — otherwise a process it simply could
+			// not measure reads as "no CPU for two days" and L1 names it as
+			// releasable.
 			snap.Processes = append(snap.Processes, model.ProcessSample{
 				Identity:       ident,
 				FootprintBytes: ru.PhysFootprint,
 				ResidentBytes:  ru.ResidentSize,
 				Quality:        model.QualDegraded,
+				CpuUnavailable: true,
 			})
 		}
 	}

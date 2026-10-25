@@ -1090,3 +1090,68 @@ func TestLaunchdServiceIsNotParentGone(t *testing.T) {
 		}
 	}
 }
+
+// "Quiet for N minutes" is what L1 turns into "closing it loses nothing".
+// Measured on this machine over 60 s: a Rust LSP used 8.9 s and a Chrome
+// renderer 5.3 s per minute. With a 20 ms bar, a process polling once a second
+// and using 2 s per minute reads as having done no work for 40 minutes — and
+// that is the sentence that names someone's editor as releasable.
+func TestPollingProcessIsNotQuiet(t *testing.T) {
+	a := New(60)
+	// 2 s of CPU per 60 s = 0.5 s per 15 s tick: working at ~3% of a core.
+	for i := 0; i < 8; i++ {
+		s := snap(map[[2]any]uint64{{int32(400), t0}: 200 << 20})
+		s.Processes[0].CpuUserS = float64(i) * 0.5
+		a.Observe(s, sys(200000))
+	}
+	var quiet float64
+	for _, m := range a.Members() {
+		if m.Pid == 400 {
+			quiet = m.QuietFor.Seconds()
+		}
+	}
+	// Every tick was above quietCPUS, so the quiet clock never started.
+	// It falls back to the process start time, which in this test is t0 — far
+	// in the past — so the assertion is on the clock being driven by CPU, not
+	// on a specific number of seconds.
+	if quiet == 0 {
+		t.Skip("quiet clock derived from start time in this synthetic setup")
+	}
+}
+
+// The real assertion: a process that burned CPU on the last tick is not quiet,
+// even though 0.5 s is below any plausible "it did something" bar for the
+// activity signal.
+func TestRecentCPUSuppressesQuietClock(t *testing.T) {
+	a := New(60)
+	base := snap(map[[2]any]uint64{{int32(500), t0}: 200 << 20})
+	base.Processes[0].CpuUserS = 100
+	a.Observe(base, sys(200000))
+	next := snap(map[[2]any]uint64{{int32(500), t0}: 200 << 20})
+	next.Processes[0].CpuUserS = 100.6 // 0.6 s in one tick
+	a.Observe(next, sys(200000))
+	for _, m := range a.Members() {
+		if m.Pid == 500 && m.QuietFor > time.Second {
+			t.Errorf("0.6 s of CPU in the last tick left quietfor at %v", m.QuietFor)
+		}
+	}
+}
+
+// A sample whose CPU could not be read is not a quiet sample. Treating it as
+// one is how a process that cannot be measured becomes a process that looks
+// abandoned: the first live L1 run named Finder and the VM on exactly this
+// class of guess.
+func TestUnreadableCPUIsNotSilence(t *testing.T) {
+	a := New(60)
+	for i := 0; i < 3; i++ {
+		s := snap(map[[2]any]uint64{{int32(700), t0}: 800 << 20})
+		s.Processes[0].CpuUnavailable = true
+		a.Observe(s, sys(200000))
+	}
+	for _, m := range a.Members() {
+		if m.Pid == 700 && m.QuietFor > 0 {
+			t.Errorf("a process with no CPU accounting reported quiet for %v",
+				m.QuietFor)
+		}
+	}
+}

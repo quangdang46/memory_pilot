@@ -38,9 +38,14 @@ type series struct {
 	// this, "no parent series" is ambiguous: the parent may simply be outside
 	// the 75% coverage this machine gives.
 	hadParent bool
-	prevBytes int64 // phys_footprint, not resident: see footprintAt
-	prevCPU   float64
-	cpuDelta  float64 // accumulated CPU seconds in the window
+	// cpuUnknown records that at least one sample of this process had no CPU
+	// accounting. Its quiet period is then unknown, not long — the difference
+	// between "nothing is using this" and "we could not see whether anything
+	// was using this", which L1 must never conflate.
+	cpuUnknown bool
+	prevBytes  int64 // phys_footprint, not resident: see footprintAt
+	prevCPU    float64
+	cpuDelta   float64 // accumulated CPU seconds in the window
 	// lastCPU is when this process last burned CPU. The relief engine needs it
 	// per process: a group can be busy while one member has been idle for days,
 	// and that member is the releasable one (measured: three rust-analyzer
@@ -276,10 +281,26 @@ func (a *Attributor) Observe(snap model.ProcessSnapshot, sys model.SystemSample)
 		// Activity sample: CPU-time delta is the only "is it working?" signal
 		// available without pwrites into another process's memory.
 		cpu := p.CpuUserS + p.CpuSystemS
+		if p.CpuUnavailable {
+			// Zero CPU here means "not measured". Treating it as silence is how
+			// an unreadable process becomes a releasable one.
+			s.cpuUnknown = true
+		}
 		cpuD := cpu - s.prevCPU
 		s.prevCPU = cpu
 		s.cpuDelta += cpuD
-		if cpuD > activityCPUS {
+		// Two thresholds, because they answer different questions.
+		//
+		// activityCPUS is the classifier's: did this process work at all in
+		// this window? Measured over 60 s on this machine, a Rust LSP and a
+		// Chrome renderer use 8.9 s and 5.3 s — real work, either way.
+		//
+		// lastCPU drives "quiet for N minutes", which L1 turns into "nobody is
+		// using this, closing it loses nothing". That claim needs the process to
+		// be genuinely asleep, not merely slow: with the same 20 ms threshold a
+		// process polling every second and using 2 s per minute reads as "no CPU
+		// for 40 minutes". quietCPUS is that bar.
+		if cpuD > quietCPUS || (cpuD > activityCPUS && s.lastCPU.IsZero()) {
 			s.lastCPU = snap.At
 		} else if s.lastCPU.IsZero() {
 			// First sample: we have no evidence it ever worked, so the quiet
@@ -699,6 +720,12 @@ func (a *Attributor) sampleIntervalS() float64 {
 const growthNoiseBytes = 1 << 20
 
 const activityCPUS = 0.02 // 20 ms of CPU between samples counts as active
+
+// quietCPUS is what counts as "still using it" for the quiet clock that L1
+// reads. 0.5 s of CPU between 15 s snapshots is ~3% of one core: below that a
+// process is not doing work, above it, it is. Measured on this machine over
+// 60 s: every large process used 0.4 s to 8.9 s, and none of them was idle.
+const quietCPUS = 0.5
 
 // SeriesStats is the classifier's input shape. It is restated here so
 // attribution can produce it without importing the classifier; the pipeline
@@ -1138,6 +1165,12 @@ func (a *Attributor) Members() []MemberFact {
 			parentAlive = false
 		}
 		parentGone := s.hadParent && s.ppid <= 1
+		if s.cpuUnknown {
+			// Unknown quiet period: report the process, but do not let it look
+			// idle. Zero QuietFor keeps it out of every L1 branch that requires
+			// elapsed silence.
+			quiet = 0
+		}
 		out = append(out, MemberFact{
 			Pid: s.id.Pid, Exe: s.id.Exe, Group: s.group,
 			Footprint: s.prevBytes, QuietFor: quiet,
