@@ -103,3 +103,33 @@ legitimate) and nothing about the process that is actually running away.
 **Interaction with defect 2:** top-N is ranked by `ResidentBytes`, the metric
 that collapses under pressure. On a machine in real trouble, the ranking is
 computed from numbers that are partly fiction.
+
+## 5. The classifier ignores release, so the clearest non-leak signature reads as a leak (measured)
+
+`Google Chrome`, a browser doing ordinary caching, was labelled
+`leak_suspicion` at 0.65 in four consecutive windows. Its own attribution
+records, same windows:
+
+| window | growth | **release** | processes | verdict |
+|---|---|---|---|---|
+| 08:05 | +1952 MB | **2851 MB** | 18 | leak_suspicion |
+| 08:10 | +1396 MB | **1697 MB** | 20 | leak_suspicion |
+| 08:15 | +1779 MB | **1468 MB** | 20 | leak_suspicion |
+| 08:20 | +2441 MB | **3097 MB** | 24 | leak_suspicion |
+| 08:25 | +1641 MB | 2395 MB | 24 | unknown |
+
+A process that releases *more* than it grows — every single window — is the
+textbook signature of a cache. `attribution` already computes `ReleaseBytes`
+and records it. `pipeline.CloseWindow` builds `classify.SeriesStats` from
+slope, activity and coverage and never passes release. `classify` has no field
+for it.
+
+So the one signal that would clear Chrome of being a leak is measured,
+stored, and not consulted. Meanwhile the growth-during-CPU signal that does
+reach the classifier is ambiguous for a browser (its renderer processes burn
+CPU while filling caches), and the process count rises (18 → 24), which is the
+*subprocess accumulation* signature — a bucket that cannot be assigned.
+
+This is what the owner sees on screen: warnings about Chrome, repeatedly. The
+warnings are not wrong about "memory went up". They are wrong about what that
+means, and the product has the data to know better.
