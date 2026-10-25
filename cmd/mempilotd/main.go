@@ -313,6 +313,23 @@ func (h *daemonHandler) recordVerdicts(s model.SystemSample, vs []classify.Verdi
 		return
 	}
 	for _, v := range vs {
+		// Only the shapes that need attention become advisories. A cache that
+		// released as much as it grew, or growth explained by CPU work, is a
+		// normal machine doing normal things; announcing it every window is
+		// how a warning list becomes noise the user stops reading. Those
+		// verdicts stay in the ledger and in `report` - they are just not
+		// warnings.
+		switch v.Bucket {
+		case classify.LeakSuspicion, classify.SubprocessAccumulation:
+			// worth surfacing
+		case classify.WorkloadGrowth:
+			// only if it is large enough to matter
+			if v.GrowthMB < advisoryWorkloadMB {
+				continue
+			}
+		default:
+			continue // cache, unknown: recorded, not announced
+		}
 		strength := "informational"
 		if v.Bucket == classify.LeakSuspicion {
 			strength = "recommendation"
@@ -332,6 +349,10 @@ func (h *daemonHandler) recordVerdicts(s model.SystemSample, vs []classify.Verdi
 			"state": ar.State, "evidence": ar.Evidence})
 	}
 }
+
+// advisoryWorkloadMB is the size above which explained growth is still worth
+// one line. Below it the verdict stays in the ledger only.
+const advisoryWorkloadMB = 2048
 
 // criticalFreeBytes: F_C fallback critical fraction of RAM (constants.md §1).
 func criticalFreeBytes(p platform.Platform) float64 {
