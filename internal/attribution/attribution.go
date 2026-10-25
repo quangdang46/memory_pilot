@@ -513,8 +513,18 @@ func (a *Attributor) seriesForLocked(anchor string) SeriesStats {
 		// Plateau: how long since this group last grew. The classifier's
 		// cache branch keys on it, and it was never computed before, so that
 		// branch was unreachable and every cache read as a leak.
+		//
+		// A group that has never grown while we watched has been flat for as
+		// long as it has existed — not for zero seconds. Leaving PlateauS at 0
+		// made the plateau branch unreachable for exactly those groups, and
+		// they then satisfied the leak branch instead (it only needs quiet time
+		// and duration), so "never grew" read as "suspicious growth". This is
+		// the same mistake as the zero-value QuietS that once read as 292 years,
+		// with the opposite sign.
 		if !h.lastGrowth.IsZero() {
 			st.PlateauS = int64(a.now.Sub(h.lastGrowth).Seconds())
+		} else {
+			st.PlateauS = int64(a.now.Sub(h.firstSeen).Seconds())
 		}
 		st.PeakProcessCount = h.peakProcs
 	}

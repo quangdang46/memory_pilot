@@ -681,3 +681,25 @@ func TestExitedProcessReleasesItsMemory(t *testing.T) {
 			h.releaseBytes>>20, arrived>>20)
 	}
 }
+
+// A group that has never grown while being watched has been flat for its whole
+// life, not for zero seconds. Leaving PlateauS at 0 made the plateau branch
+// unreachable for exactly those groups, and they fell through to the leak
+// branch instead — "never grew" read as "suspicious growth".
+func TestNeverGrownGroupReportsItsFullPlateau(t *testing.T) {
+	a := New(300)
+	base := time.Now().Add(-30 * time.Minute)
+	for i := 0; i < 120; i++ { // 30 minutes, constant size
+		at := base.Add(time.Duration(i) * 15 * time.Second)
+		a.Observe(model.ProcessSnapshot{At: at, Quality: model.QualGood,
+			Coverage: model.Coverage{Attempted: 1, Succeeded: 1},
+			Processes: []model.ProcessSample{{Identity: model.ProcessIdentity{
+				Pid: 600, Ppid: 1, StartTime: t0, Executable: "flat-app"},
+				FootprintBytes: 200 << 20, Quality: model.QualGood}}}, sys(200000))
+	}
+	st := a.SeriesFor("flat-app")
+	if st.PlateauS < 900 {
+		t.Errorf("flat group reports PlateauS=%ds after 1800s of flatness: the "+
+			"plateau branch cannot fire on a group that never grew", st.PlateauS)
+	}
+}
