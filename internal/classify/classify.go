@@ -83,7 +83,11 @@ func Classify(s SeriesStats) Verdict {
 	// accumulating anything, whatever its gross growth number says. This is
 	// checked first because it is a direct measurement of what happened, not
 	// an inference from the shape of a curve.
-	if s.ReleaseBytes > 0 && s.ReleaseBytes >= s.GrowthBytes {
+	// Both sides must be non-zero: "released 0 while growing 0" is a group
+	// that did nothing, not a cycling cache. Measured: probe-children with
+	// zero growth and zero release was classified a cache purely because
+	// 0 >= 0.
+	if s.ReleaseBytes > 0 && s.GrowthBytes > 0 && s.ReleaseBytes >= s.GrowthBytes {
 		v.Bucket = CacheOrRetrievable
 		v.Basis = append(v.Basis,
 			fmt.Sprintf("released %d MB while growing %d MB — cycling, not accumulating",

@@ -44,3 +44,15 @@ func TestPhraseTest(t *testing.T) {
 		t.Errorf("phrase test missed violations: %v", viol)
 	}
 }
+
+// A group that neither grew nor released is not a cache; 0 >= 0 must not
+// satisfy the cycling test. Measured: probe-children with growth=0 and
+// release=0 was classified cache_or_retrievable.
+func TestZeroGrowthZeroReleaseIsNotCycling(t *testing.T) {
+	v := Classify(SeriesStats{GroupKey: "idle-group", CoverageRatio: 1.0,
+		GrowthBytes: 0, ReleaseBytes: 0, ProcessCount: 12, PeakProcessCount: 20,
+		DurationS: 2400, ActivityCorr: 0.0, QuietS: 2000})
+	if v.Bucket == CacheOrRetrievable {
+		t.Errorf("idle group classified as cycling cache: %v", v.Basis)
+	}
+}
