@@ -20,6 +20,11 @@ type Identity struct {
 	Exe       string
 }
 
+// Time is when the process started.
+func (id Identity) Time() time.Time {
+	return time.Unix(id.StartSec, id.StartUsec*1000)
+}
+
 func (id Identity) Key() string {
 	return fmt.Sprintf("%d:%d.%d:%s", id.Pid, id.StartSec, id.StartUsec, id.Exe)
 }
@@ -30,6 +35,11 @@ type series struct {
 	prevBytes int64 // phys_footprint, not resident: see footprintAt
 	prevCPU   float64
 	cpuDelta  float64 // accumulated CPU seconds in the window
+	// lastCPU is when this process last burned CPU. The relief engine needs it
+	// per process: a group can be busy while one member has been idle for days,
+	// and that member is the releasable one (measured: three rust-analyzer
+	// processes, 2.7 GB, zero CPU for 48 hours, inside a working claude group).
+	lastCPU   time.Time
 	alive     bool
 	delta     int64 // accumulated positive growth in window
 	release   int64 // accumulated frees, tracked separately
@@ -260,6 +270,13 @@ func (a *Attributor) Observe(snap model.ProcessSnapshot, sys model.SystemSample)
 		cpuD := cpu - s.prevCPU
 		s.prevCPU = cpu
 		s.cpuDelta += cpuD
+		if cpuD > activityCPUS {
+			s.lastCPU = snap.At
+		} else if s.lastCPU.IsZero() {
+			// First sample: we have no evidence it ever worked, so the quiet
+			// period starts now rather than at the zero time.
+			s.lastCPU = snap.At
+		}
 		s.samples++
 		active := cpuD > activityCPUS
 		grew := d > 0
@@ -1067,4 +1084,48 @@ func (a *Attributor) WindowStats(anchor string) (SeriesStats, bool) {
 	defer a.mu.Unlock()
 	st, ok := a.windowStats[anchor]
 	return st, ok
+}
+
+// MemberFact is one live process, for the relief engine's per-process
+// assessment. Attribution knows each member's footprint and when it last
+// burned CPU; the relief engine decides what that means.
+type MemberFact struct {
+	Pid         int32
+	Exe         string
+	Group       string
+	Footprint   int64
+	QuietFor    time.Duration
+	ParentAlive bool
+}
+
+// Members returns every live process with the facts the relief engine needs.
+//
+// The group a process belongs to is not a filter here: an abandoned process
+// inside a protected group (an agent's idle rust-analyzer) is exactly what the
+// engine must be able to see.
+func (a *Attributor) Members() []MemberFact {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	out := make([]MemberFact, 0, len(a.series))
+	for _, s := range a.series {
+		if !s.alive || s.prevBytes <= 0 {
+			continue
+		}
+		quiet := a.now.Sub(s.lastCPU)
+		if s.lastCPU.IsZero() || quiet < 0 {
+			quiet = a.now.Sub(s.id.Time())
+			if s.id.Time().IsZero() {
+				quiet = 0
+			}
+		}
+		_, parentAlive := a.series[identityKeyOf(a, s.ppid)]
+		if s.ppid <= 1 {
+			parentAlive = false
+		}
+		out = append(out, MemberFact{
+			Pid: s.id.Pid, Exe: s.id.Exe, Group: s.group,
+			Footprint: s.prevBytes, QuietFor: quiet, ParentAlive: parentAlive,
+		})
+	}
+	return out
 }

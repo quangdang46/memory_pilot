@@ -285,7 +285,91 @@ func (h *daemonHandler) runPipeline(est *pressure.Estimator, fc *forecast.Foreca
 		pipeline.PressureView{Level: s.KernelLevel, Score: st.Score, Quality: s.MachStatsQuality},
 		forecast.ToModel(fo, s.At), verdicts)
 	h.recordVerdicts(s, verdicts, results)
+	h.recommendRelief(s, st.Score)
 }
+
+// recommendRelief runs L1 when the machine is actually under pressure.
+//
+// This is the tier the design specifies and the product was missing: not "this
+// group grew", but "closing these processes would return this much, and here is
+// whether that covers the gap". It runs only at Warn and above, because that is
+// when the answer matters — at Normal, every group is the cost of doing work
+// and there is nothing to decide.
+func (h *daemonHandler) recommendRelief(s model.SystemSample, score float64) {
+	if s.KernelLevel < model.LevelWarn {
+		return
+	}
+	// One recommendation per cooldown. The condition changes slowly and the
+	// answer does not get more true by repeating it.
+	h.mu.Lock()
+	if !h.lastReliefAt.IsZero() && s.At.Sub(h.lastReliefAt) < reliefCooldown {
+		h.mu.Unlock()
+		return
+	}
+	h.lastReliefAt = s.At
+	h.mu.Unlock()
+
+	members := h.pipe.Attr.Members()
+	if len(members) == 0 {
+		return
+	}
+	facts := make([]relief.Member, 0, len(members))
+	for _, m := range members {
+		facts = append(facts, relief.Member{
+			Pid: m.Pid, Exe: m.Exe, Footprint: m.Footprint,
+			QuietFor: m.QuietFor, ParentAlive: m.ParentAlive,
+		})
+	}
+	cs := relief.AssessMembers(relief.GroupFacts{Members: facts})
+	if len(cs) == 0 {
+		return
+	}
+	relief.Rank(cs)
+
+	shortfall := int64(0)
+	if info := h.plat.Info(); info.TotalRAMBytes > 0 {
+		// The gap is what would have to be returned to leave the machine
+		// comfortable again: the shortfall against a fifth of RAM free.
+		free := int64(s.FreePages) * int64(s.PageBytes)
+		want := int64(0.2 * float64(info.TotalRAMBytes))
+		if free < want {
+			shortfall = want - free
+		}
+	}
+	r := &relief.Recommendation{At: s.At, Severity: pressureName(s.KernelLevel),
+		Shortfall: shortfall, Candidates: cs}
+	for _, c := range cs {
+		if c.State == relief.StateAbandoned {
+			r.TotalRelief += c.ExpectedReliefBytes
+		}
+	}
+	text := r.Text()
+	if viol := classify.PhraseTest(text); len(viol) > 0 {
+		text = "relief recommendation withheld by the phrase test"
+	}
+	_ = h.lg.Append(map[string]any{"kind": "relief_recommendation", "at": s.At,
+		"severity": r.Severity, "shortfall_mb": shortfall >> 20,
+		"total_relief_mb": r.TotalRelief >> 20, "sufficient": r.Sufficient(),
+		"candidates": len(cs), "text": text})
+}
+
+// pressureName renders a level for the record.
+func pressureName(l model.PressureLevel) string {
+	switch l {
+	case model.LevelNormal:
+		return "Normal"
+	case model.LevelWarn:
+		return "Warn"
+	case model.LevelCritical:
+		return "Critical"
+	}
+	return "Unknown"
+}
+
+// reliefCooldown bounds how often L1 speaks. Twenty minutes is long enough
+// that a recommendation is news each time it appears, and short enough that a
+// worsening situation is re-reported within one reporting window.
+const reliefCooldown = 20 * time.Minute
 
 // attributionWindowS is the reporting window (5 min). Short enough that a
 // report describes "just now"; long enough that a 15 s snapshot cadence gives
@@ -440,6 +524,7 @@ type daemonHandler struct {
 
 	mu                             sync.Mutex
 	lastAdvisory                   map[string]time.Time
+	lastReliefAt                   time.Time
 	windowStart                    time.Time
 	lastSample                     model.SystemSample
 	lastForecast                   model.Forecast
