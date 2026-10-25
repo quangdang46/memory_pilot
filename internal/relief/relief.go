@@ -79,6 +79,26 @@ type GroupFacts struct {
 	IsTerminal bool          // shells, terminals: never a candidate
 	IsAgent    bool          // coding agents: never a candidate without opt-in
 	CacheRole  bool          // known cache (browser, indexer): retrievable
+
+	// Members are the group's individual processes. A group's footprint hides
+	// the case that matters most: one abandoned member holding gigabytes while
+	// the rest work. Measured on the owner's machine — three rust-analyzer
+	// processes held 2.7 GB with zero CPU for two days, inside a `claude` group
+	// that was excluded wholesale because the agent itself is protected.
+	Members []Member
+}
+
+// Member is one process inside a group.
+type Member struct {
+	Pid       int32
+	Exe       string
+	Footprint int64
+	// QuietFor is how long since this process last used CPU.
+	QuietFor time.Duration
+	// ParentAlive reports whether the process that started it still runs.
+	// A live parent does not make the child useful, but a dead one is strong
+	// evidence it is abandoned.
+	ParentAlive bool
 }
 
 // Assess turns facts into a candidate with its three numbers.
@@ -159,6 +179,64 @@ func Assess(f GroupFacts) Candidate {
 	}
 	c.ExpectedReliefBytes = f.Footprint
 	return c
+}
+
+// AssessMembers returns candidates for individual processes inside a group,
+// which is where the actionable cases live.
+//
+// A group-level verdict cannot express "one of these eleven processes is
+// abandoned and holds 2.7 GB". The group is either a terminal (excluded), an
+// agent (excluded), or a workload whose total is the cost of doing its job.
+// Individual members are judged on their own evidence.
+func AssessMembers(f GroupFacts) []Candidate {
+	var out []Candidate
+	for _, m := range f.Members {
+		if m.Footprint < MinReliefBytes {
+			continue
+		}
+		if m.QuietFor < MinQuietForSuspicious {
+			continue // it is working
+		}
+		c := Candidate{
+			Group:            fmt.Sprintf("%s (pid %d)", m.Exe, m.Pid),
+			InterruptionRisk: 0.8,
+			State:            StateSuspicious,
+		}
+		c.Evidence = append(c.Evidence,
+			fmt.Sprintf("holds %d MB, no CPU for %s",
+				m.Footprint>>20, m.QuietFor.Round(time.Second)))
+
+		switch {
+		case !m.ParentAlive && m.QuietFor >= MinQuietForAbandoned:
+			c.State = StateAbandoned
+			c.AbandonmentConfidence = 0.85
+			c.InterruptionRisk = 0.15
+			c.Evidence = append(c.Evidence, "parent gone: nothing is waiting on it")
+		case !m.ParentAlive:
+			c.State = StateSuspicious
+			c.AbandonmentConfidence = 0.5
+			c.InterruptionRisk = 0.3
+			c.Evidence = append(c.Evidence,
+				fmt.Sprintf("parent gone, quiet %s — short of the %s bar",
+					m.QuietFor.Round(time.Second), MinQuietForAbandoned))
+		case m.QuietFor >= MinQuietForAbandoned:
+			// A live parent that is not using it. This is the rust-analyzer
+			// case: the session that spawned it is still open but idle, and the
+			// child has held gigabytes without doing anything for hours.
+			c.State = StateSuspicious
+			c.AbandonmentConfidence = 0.55
+			c.InterruptionRisk = 0.45
+			c.Evidence = append(c.Evidence,
+				"parent still running, but this process has done no work for "+
+					m.QuietFor.Round(time.Second).String()+" — closing it loses nothing "+
+					"it is currently doing, though the parent may restart it")
+		default:
+			c.AbandonmentConfidence = 0.3
+		}
+		c.ExpectedReliefBytes = m.Footprint
+		out = append(out, c)
+	}
+	return out
 }
 
 // Recommendation is the sentence the owner reads. It carries the relief, the

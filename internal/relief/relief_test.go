@@ -179,3 +179,75 @@ func TestGrowthAloneIsNotRecommended(t *testing.T) {
 		t.Error("a real candidate was not recommended")
 	}
 }
+
+// The case that motivated this: three rust-analyzer processes holding 2.7 GB
+// with zero CPU for two days, inside a `claude` group that was excluded
+// wholesale because the agent itself is protected.
+func TestAbandonedChildInsideProtectedGroupIsFound(t *testing.T) {
+	f := GroupFacts{
+		Group:     "claude",
+		IsAgent:   true, // the group is protected
+		Footprint: 4000 << 20,
+		Members: []Member{
+			{Pid: 11265, Exe: "rust-analyzer", Footprint: 1017 << 20,
+				QuietFor: 48 * time.Hour, ParentAlive: true},
+			{Pid: 21432, Exe: "rust-analyzer", Footprint: 859 << 20,
+				QuietFor: 48 * time.Hour, ParentAlive: true},
+			{Pid: 37060, Exe: "rust-analyzer", Footprint: 821 << 20,
+				QuietFor: 13 * time.Hour, ParentAlive: true},
+		},
+	}
+	// The group itself is still excluded.
+	if g := Assess(f); g.State != StateUseful {
+		t.Errorf("group classified %q; the agent itself must stay protected", g.State)
+	}
+	// But its idle children are candidates.
+	cs := AssessMembers(f)
+	if len(cs) != 3 {
+		t.Fatalf("%d candidates, want 3 — the group-level exclusion swallowed them", len(cs))
+	}
+	total := int64(0)
+	for _, c := range cs {
+		total += c.ExpectedReliefBytes
+		if len(c.Evidence) == 0 {
+			t.Errorf("%s: no evidence", c.Group)
+		}
+	}
+	if total < 2<<30 {
+		t.Errorf("total relief %d MB, want ~2700", total>>20)
+	}
+}
+
+// A working member is never a candidate, however large.
+func TestBusyMemberIsNotACandidate(t *testing.T) {
+	f := GroupFacts{Group: "claude", Members: []Member{
+		{Pid: 1, Exe: "rust-analyzer", Footprint: 2000 << 20,
+			QuietFor: 2 * time.Second, ParentAlive: true},
+	}}
+	if cs := AssessMembers(f); len(cs) != 0 {
+		t.Errorf("a process using CPU 2s ago produced %d candidates", len(cs))
+	}
+}
+
+// Small members are ignored even when idle.
+func TestSmallIdleMemberIgnored(t *testing.T) {
+	f := GroupFacts{Group: "claude", Members: []Member{
+		{Pid: 1, Exe: "helper", Footprint: 40 << 20,
+			QuietFor: 2 * time.Hour, ParentAlive: false},
+	}}
+	if cs := AssessMembers(f); len(cs) != 0 {
+		t.Errorf("40 MB idle process produced a candidate")
+	}
+}
+
+// An orphaned member (parent gone, quiet long) is abandoned.
+func TestOrphanedMemberIsAbandoned(t *testing.T) {
+	f := GroupFacts{Group: "x", Members: []Member{
+		{Pid: 9, Exe: "build", Footprint: 500 << 20,
+			QuietFor: 30 * time.Minute, ParentAlive: false},
+	}}
+	cs := AssessMembers(f)
+	if len(cs) != 1 || cs[0].State != StateAbandoned {
+		t.Errorf("orphaned idle member: %+v", cs)
+	}
+}
