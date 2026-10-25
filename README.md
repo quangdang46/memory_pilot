@@ -4,11 +4,18 @@
 
 > Status: **working, measured, and honest about what is not proven.**
 >
-> On 2026-10-25 an evidence-first pass replaced guessing: labelled workloads
-> with fixed ground truth, measurements taken independently of the daemon's
-> own numbers, and nine defects fixed only after the data showed them. Four of
-> five labelled shapes now classify correctly (0/5 before); the full chain
-> produced its first live action results under real pressure.
+> Two evidence-first passes on 2026-10-25. The first replaced guessing with
+> labelled workloads and fixed nine defects; four of five labelled shapes now
+> classify correctly (0/5 before). The second fixed twenty-eight more, all found
+> by comparing the daemon's numbers against the process tree at the same moment.
+>
+> **L1 now exists.** The design always specified a tier that answers *"what can
+> be released, how much would that return, and is that enough?"* — until
+> 2026-10-25 only the observation tier had been built, which is why the product
+> reported work without being able to do anything about it. It now names the
+> specific idle processes holding memory, their evidence, the total relief, and
+> the gap it does or does not cover. Detect and recommend only: nothing can
+> terminate.
 >
 > Still unproven, and stated as such:
 > - **Critical pressure** was never reached on the target machine (level 2 of
