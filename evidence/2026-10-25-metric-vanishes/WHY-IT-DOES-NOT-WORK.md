@@ -1,17 +1,20 @@
 # Why the leak warnings did not work — evidence summary
 
-Three independent defects, each measured on the target machine, each enough on
-its own to make the product fail at its stated job. None of this is a tuning
-problem; all three are the absence of a required piece.
+Five independent defects, each measured on the target machine. Four are the
+absence of a required piece rather than a tuning problem; one (defect 1) was
+repaired earlier today and is listed for completeness.
 
-## 1. Nothing was ever classified (fixed)
+Status key: FIXED = repaired and test-guarded; OPEN = present in the running
+daemon.
+
+## 1. Nothing was ever classified — FIXED
 
 The daemon built its policy engine and discarded it; attribution was never
 fed process data. Evidence: 12 hours of ledger, 17 406 system samples,
 8 413 decisions, **zero** attributions, **zero** action results. The report
 command had no grouped-growth data to show because none was ever computed.
 
-## 2. The measurement collapses under pressure (not fixed)
+## 2. The measurement collapses under pressure — OPEN
 
 `attribution.go` computes growth from `ProcessSample.ResidentBytes`.
 
@@ -37,7 +40,7 @@ once the system starts reclaiming. So in the only regime the product exists
 for, a leaking process measures as *shrinking*. The collector already fetches
 `phys_footprint` (`platform.go:151`) and nothing reads it.
 
-## 3. Two of the four verdicts cannot be produced (not fixed)
+## 3. Two of the five verdicts cannot be produced — OPEN
 
 `classify` declares five buckets; only two are reachable.
 
@@ -54,18 +57,7 @@ A cache-shaped workload is therefore reported as `leak_suspicion`. Measured:
 `probe-plateau` held flat at 6.2 MB for 10 minutes and was labelled
 "unexplained sustained growth" at confidence 0.65.
 
-## What this means for the original complaint
-
-The user's report was "repeated leak waves, Memory Pilot had no effect". The
-evidence supports a stronger statement: even with the wiring repaired, a real
-leak that drives the machine into pressure would be *invisible* — its
-measured size collapses exactly then — and a benign cache would be *accused*.
-Both failure directions were present at once.
-
-Fixing (1) alone, which is what an earlier commit did, produces a daemon that
-reports confidently and wrongly. That is worse than a silent one.
-
-## 4. The classifier only looks at the top five groups — and which five is decided by raw bytes (measured)
+## 4. Only the top five groups are judged, ranked by raw bytes — OPEN
 
 Run 3 kept five labelled workloads alive for 26+ minutes on a busy machine.
 Not one of them produced a single classification, while `Google Chrome`,
@@ -104,7 +96,7 @@ legitimate) and nothing about the process that is actually running away.
 that collapses under pressure. On a machine in real trouble, the ranking is
 computed from numbers that are partly fiction.
 
-## 5. The classifier ignores release, so the clearest non-leak signature reads as a leak (measured)
+## 5. Release volume is measured, stored, and ignored — OPEN
 
 `Google Chrome`, a browser doing ordinary caching, was labelled
 `leak_suspicion` at 0.65 in four consecutive windows. Its own attribution
@@ -133,3 +125,33 @@ CPU while filling caches), and the process count rises (18 → 24), which is the
 This is what the owner sees on screen: warnings about Chrome, repeatedly. The
 warnings are not wrong about "memory went up". They are wrong about what that
 means, and the product has the data to know better.
+
+---
+
+## What this means for the original complaint
+
+The user's report was "repeated leak waves, Memory Pilot had no effect". The
+evidence supports a stronger statement.
+
+- A real leak that drives the machine into pressure is **invisible**: the
+  field it is measured with collapses exactly then (defect 2).
+- A benign cache is **accused**: release volume is ignored (defect 5), the
+  cache verdict is unreachable (defect 3), and Chrome is labelled
+  `leak_suspicion` four windows running.
+- A sustained unexplained grower that is not the largest is **never judged at
+  all**: only the top five by bytes reach the classifier (defect 4).
+
+All three failure directions are present at once. Fixing the wiring (defect
+1, done earlier today) produces a daemon that reports confidently and wrongly,
+which is worse than a silent one.
+
+## Order the fixes must go in
+
+1. Measure `phys_footprint`, not `resident_size` (defect 2). Everything
+   downstream is computed from this number; until it is right, no threshold or
+   classifier change can be trusted.
+2. Feed release volume and process count into classification (defects 5, 3).
+   The data is already collected and recorded.
+3. Stop ranking candidates by absolute bytes alone (defect 4). Sustained
+   growth rate and "has it ever stopped" matter more than size.
+4. Re-run the labelled experiment. Only then is a verdict worth acting on.
