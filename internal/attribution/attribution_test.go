@@ -578,3 +578,67 @@ func TestHistoryRetiredWhenGroupDisappears(t *testing.T) {
 			"evidence window", h.firstSeen, fresh)
 	}
 }
+
+// A process that starts while the daemon is watching arrives holding memory,
+// and that arrival is growth. Measured in run16: probe-children held 127 MB
+// across nine processes while the window reported 5 MB, because each child was
+// spawned at full size and only its later change was counted — so the very
+// shape the subprocess_accumulation bucket exists for could not be seen.
+func TestNewProcessArrivalCountsAsGrowth(t *testing.T) {
+	a := New(300)
+	base := time.Now()
+	// The daemon has been watching for a while: pid 1 predates it.
+	daemonStart := base
+	for i := 0; i < 4; i++ {
+		at := base.Add(time.Duration(i) * 15 * time.Second)
+		a.Observe(model.ProcessSnapshot{At: at, Quality: model.QualGood,
+			Coverage: model.Coverage{Attempted: 1, Succeeded: 1},
+			Processes: []model.ProcessSample{{Identity: model.ProcessIdentity{
+				Pid: 1, Ppid: 1, StartTime: t0, Executable: "probe-children"},
+				FootprintBytes: 3 << 20, Quality: model.QualGood}}}, sys(200000))
+	}
+	// A child starts now, at 15 MB, and then does not change.
+	childStart := daemonStart.Add(60 * time.Second)
+	for i := 0; i < 3; i++ {
+		at := base.Add(time.Duration(4+i) * 15 * time.Second)
+		a.Observe(model.ProcessSnapshot{At: at, Quality: model.QualGood,
+			Coverage: model.Coverage{Attempted: 2, Succeeded: 2},
+			Processes: []model.ProcessSample{
+				{Identity: model.ProcessIdentity{Pid: 1, Ppid: 1, StartTime: t0,
+					Executable: "probe-children"}, FootprintBytes: 3 << 20,
+					Quality: model.QualGood},
+				{Identity: model.ProcessIdentity{Pid: 2, Ppid: 1, StartTime: childStart,
+					Executable: "probe-children"}, FootprintBytes: 15 << 20,
+					Quality: model.QualGood}}}, sys(200000))
+	}
+	st := a.SeriesFor("probe-children")
+	if got := st.GrowthBytes >> 20; got < 15 {
+		t.Errorf("group growth %d MB, want >= 15: a child that started during "+
+			"observation and holds 15 MB was not counted", got)
+	}
+}
+
+// The other half: processes that already existed when the daemon started are
+// baseline, not growth. Counting them made startup read as ~20 GB.
+func TestPreexistingProcessesAreBaseline(t *testing.T) {
+	a := New(300)
+	base := time.Now()
+	for i := 0; i < 4; i++ {
+		at := base.Add(time.Duration(i) * 15 * time.Second)
+		a.Observe(model.ProcessSnapshot{At: at, Quality: model.QualGood,
+			Coverage: model.Coverage{Attempted: 2, Succeeded: 2},
+			Processes: []model.ProcessSample{
+				{Identity: model.ProcessIdentity{Pid: 1, Ppid: 1, StartTime: t0,
+					Executable: "wezterm-gui"}, FootprintBytes: 500 << 20,
+					Quality: model.QualGood},
+				// A process that started before observation began.
+				{Identity: model.ProcessIdentity{Pid: 2, Ppid: 1,
+					StartTime: base.Add(-time.Hour), Executable: "node"},
+					FootprintBytes: 800 << 20, Quality: model.QualGood}}}, sys(200000))
+	}
+	st := a.SeriesFor("wezterm-gui")
+	if got := st.GrowthBytes >> 20; got != 0 {
+		t.Errorf("steady group reports %d MB of growth: processes present at "+
+			"startup are baseline, not growth", got)
+	}
+}

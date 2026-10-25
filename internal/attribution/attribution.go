@@ -92,6 +92,7 @@ type Attributor struct {
 	lastSys        *model.SystemSample
 	windowSysStart *model.SystemSample
 	lastSnapAt     time.Time
+	firstSnapAt    time.Time // first snapshot ever; separates "arrived" from "was always here"
 	observedGrowth int64
 	lastCoverage   model.Coverage
 	lastQuality    model.Quality
@@ -140,6 +141,9 @@ func (a *Attributor) Observe(snap model.ProcessSnapshot, sys model.SystemSample)
 			a.sampleDT = dt
 		}
 	}
+	if a.firstSnapAt.IsZero() {
+		a.firstSnapAt = snap.At
+	}
 	a.lastSnapAt = snap.At
 	// Per-tick, per-group activity flags. The tick is the unit: a group is
 	// "active" if any member burned CPU, and "quiet" if no member did. Summing
@@ -152,13 +156,30 @@ func (a *Attributor) Observe(snap model.ProcessSnapshot, sys model.SystemSample)
 			Exe: p.Identity.Executable}
 		key := id.Key()
 		s, ok := a.series[key]
-		if !ok {
-			a.series[key] = &series{id: id, ppid: p.Identity.Ppid,
-				prevBytes: int64(footprintAt(p)), alive: true}
-			continue
-		}
 		now := int64(footprintAt(p))
-		d := now - s.prevBytes
+		d := int64(0)
+		if ok {
+			d = now - s.prevBytes
+		}
+		if !ok {
+			// A process first seen is baseline, not growth — with one
+			// exception: a process that *started while we were watching*
+			// arrives holding its memory, and that arrival is growth. The
+			// group grew by the size of a new member.
+			//
+			// Both halves matter. Counting every first sighting as growth
+			// turns the daemon's own startup into 20 GB of "growth" (the
+			// machine was already full of processes); counting none makes
+			// process accumulation invisible — measured in run16,
+			// probe-children held 127 MB across nine processes while the
+			// window reported growth 5 MB, because each child was spawned at
+			// full size and only its later change was ever counted.
+			if a.firstSnapAt.IsZero() || time.Unix(id.StartSec, id.StartUsec*1000).After(a.firstSnapAt) {
+				d = now
+			}
+			s = &series{id: id, ppid: p.Identity.Ppid, alive: true}
+			a.series[key] = s
+		}
 		s.prevBytes = now
 		s.alive = true
 		s.ppid = p.Identity.Ppid // reparenting is recorded, membership is sticky (§4.2)
@@ -452,7 +473,13 @@ func (a *Attributor) seriesForLocked(anchor string) SeriesStats {
 		st.DurationS = int64(span)
 		st.ActivityS = h.activeS
 		st.QuietS = h.quietS
-		if span > 0 {
+		// span must be a real observation interval. A group first seen on the
+		// tick being read has a span of microseconds, and dividing by that
+		// reported 5.9e13 B/s — a rate no process can reach, from two normal
+		// samples. Comparing against the sample interval is not enough: two
+		// snapshots taken microseconds apart have a sampleDT just as small.
+		// Below one second the window's own slope is the honest answer.
+		if span >= 1 {
 			st.SlopeBytesS = float64(h.growthBytes) / span
 			st.ReleaseBytes = h.releaseBytes
 		}
