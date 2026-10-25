@@ -186,33 +186,38 @@ func TestResetKeepsSeriesBaseline(t *testing.T) {
 // SeriesFor reports growth for exactly one anchor.
 func TestSeriesForAnchor(t *testing.T) {
 	a := New(300)
-	mk := func(it, term uint64) model.ProcessSnapshot {
-		return model.ProcessSnapshot{At: time.Now(), Quality: model.QualGood,
-			Coverage: model.Coverage{Attempted: 4, Succeeded: 4},
+	// The slope is fitted over a trend window, so it needs a real series of
+	// samples: 4 MB/s for ten minutes on one group, flat on the other.
+	base := time.Now()
+	for i := 0; i < 40; i++ {
+		it := uint64(100<<20) + uint64(i)*(4<<20)
+		a.Observe(model.ProcessSnapshot{At: base.Add(time.Duration(i) * 15 * time.Second),
+			Quality: model.QualGood, Coverage: model.Coverage{Attempted: 4, Succeeded: 4},
 			Processes: []model.ProcessSample{
 				{Identity: model.ProcessIdentity{Pid: 10, Ppid: 1, StartTime: t0, Executable: "iTerm2"}, ResidentBytes: 50 << 20},
 				{Identity: model.ProcessIdentity{Pid: 11, Ppid: 10, StartTime: t0, Executable: "node"}, ResidentBytes: it},
 				{Identity: model.ProcessIdentity{Pid: 20, Ppid: 1, StartTime: t0, Executable: "Terminal"}, ResidentBytes: 50 << 20},
-				{Identity: model.ProcessIdentity{Pid: 21, Ppid: 20, StartTime: t0, Executable: "python3"}, ResidentBytes: term},
-			}}
+				{Identity: model.ProcessIdentity{Pid: 21, Ppid: 20, StartTime: t0, Executable: "python3"}, ResidentBytes: 100 << 20},
+			}}, sys(300000))
 	}
-	a.Observe(mk(100<<20, 100<<20), sys(300000))
-	a.Observe(mk(400<<20, 120<<20), sys(280000))
-	it := a.SeriesFor("iTerm2")
+	itv := a.SeriesFor("iTerm2")
 	ter := a.SeriesFor("Terminal")
-	// 300 MB over 300 s
-	if it.SlopeBytesS < 0.9e6 || it.SlopeBytesS > 1.1e6 {
-		t.Errorf("iTerm2 slope %v B/s, want ~1e6", it.SlopeBytesS)
+	// 4 MB per 15 s ≈ 280 KB/s.
+	if itv.SlopeBytesS < 0.25e6 || itv.SlopeBytesS > 0.32e6 {
+		t.Errorf("iTerm2 slope %v B/s, want ~0.28e6", itv.SlopeBytesS)
 	}
-	if ter.SlopeBytesS > 0.1e6 {
-		t.Errorf("Terminal slope %v B/s, want ~0.07e6", ter.SlopeBytesS)
+	if !itv.Climbing {
+		t.Error("a group adding 4 MB every 15 s is not reported as climbing")
+	}
+	if ter.Climbing {
+		t.Errorf("flat group reported as climbing (slope %v)", ter.SlopeBytesS)
 	}
 	// Both members of each group count, not only the one that grew last tick:
 	// the group is the unit of reporting.
-	if it.ProcessCount != 2 || ter.ProcessCount != 2 {
-		t.Errorf("process counts it=%d term=%d", it.ProcessCount, ter.ProcessCount)
+	if itv.ProcessCount != 2 || ter.ProcessCount != 2 {
+		t.Errorf("process counts it=%d term=%d", itv.ProcessCount, ter.ProcessCount)
 	}
-	if it.CoverageRatio <= 0 {
+	if itv.CoverageRatio <= 0 {
 		t.Errorf("coverage ratio not reported")
 	}
 }

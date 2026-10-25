@@ -39,9 +39,6 @@ type series struct {
 	// swept it is absent from the snapshot, so walking the parent chain can no
 	// longer find its ancestry.
 	group string
-	// baselineContribution is what this member added to its group's starting
-	// size, so it can be removed again when the member exits.
-	baselineContribution int64
 
 	// Activity correlation counters (MP-ALG-005): a group that grows while
 	// its processes burn CPU is doing work; a group that grows while they sit
@@ -134,6 +131,16 @@ type Attributor struct {
 
 // history spans multiple report windows. Buckets keep the window boundary
 // from erasing evidence of what happened before it.
+// trendPoint is one sample of a group's total footprint.
+type trendPoint struct {
+	at    time.Time
+	bytes int64
+}
+
+// trendWindowS is how much history the slope is fitted over. Long enough that
+// per-tick noise averages out, short enough to react within a report window.
+const trendWindowS = 1200
+
 type history struct {
 	firstSeen    time.Time
 	lastSeen     time.Time // last sample where the group had a live member
@@ -141,15 +148,21 @@ type history struct {
 	lastActivity time.Time // last sample where any member burned CPU
 	growthBytes  int64     // total positive growth since firstSeen (gross)
 	releaseBytes int64     // total frees since firstSeen (gross)
-	// netGrowthBytes is what the group actually added: its total size now minus
-	// its total size when first seen. Recomputed, not accumulated — see the
-	// fold loop in Observe.
-	netGrowthBytes int64
-	sizeAtStart    int64
-	peakProcs      int // high-water process count
-	activeS        int64
-	quietS         int64
-	peakGrowthMB   int64
+	// Trend samples of the group's total footprint. The group's size is
+	// measurable each tick; its *growth* cannot be accumulated from per-member
+	// deltas at 75% coverage without drifting, and five attempts to do so were
+	// each wrong in a different direction (73 GB, 16250 MB, 2846 MB, 507 MB,
+	// and a baseline that went negative). A slope over a short window is a
+	// direct measurement of the thing the question asks about: is this group
+	// still getting bigger?
+	trend        []trendPoint
+	trendStop    time.Time // when the current uninterrupted climb began
+	slopeBps     float64   // bytes per second, least squares over the window
+	climbing     bool      // true when the trend is positive and consistent
+	peakProcs    int       // high-water process count
+	activeS      int64
+	quietS       int64
+	peakGrowthMB int64
 }
 
 func New(windowS int64) *Attributor {
@@ -231,19 +244,6 @@ func (a *Attributor) Observe(snap model.ProcessSnapshot, sys model.SystemSample)
 			// member, which a snapshot of the first total could not do: node's
 			// first window saw a fraction of its processes and every later one
 			// looked like +293 MB of growth.
-			// A member joins the baseline when first seen and leaves it when it
-			// dies, so the baseline tracks the group's real starting population
-			// rather than a lifetime sum of everything that ever existed. A sum
-			// that never shrinks reads a group losing a member as negative
-			// growth — measured on node, which reported -1124 MB while holding a
-			// steady 3.19 GB.
-			wasHere := a.firstSnapAt.IsZero() ||
-				!time.Unix(id.StartSec, id.StartUsec*1000).After(a.firstSnapAt)
-			s.baselineContribution = 0
-			if wasHere {
-				s.baselineContribution = now
-				a.ensureHistory(snap.At, a.groupFor(id)).sizeAtStart += now
-			}
 		}
 		s.prevBytes = now
 		s.alive = true
@@ -394,9 +394,7 @@ func (a *Attributor) Observe(snap model.ProcessSnapshot, sys model.SystemSample)
 		// overstatement, and an advisory repeating every window about a group
 		// that was flat. Recomputing from the total is immune to that.
 		if tot, ok := tickBytes[gid]; ok && tot > 0 {
-			// sizeAtStart is filled during the scan above, so by here it
-			// already includes every member seen for the first time this tick.
-			h.netGrowthBytes = tot - h.sizeAtStart
+			h.addTrend(snap.At, tot)
 		}
 	}
 	a.retireGoneGroups(tickProcs, snap.At)
@@ -623,7 +621,9 @@ func (a *Attributor) seriesForLocked(anchor string) SeriesStats {
 		// allocation and called a group that had accumulated 288 MB a cycling
 		// cache (run20, probe-children).
 		st.LongGrowthBytes = h.growthBytes
-		st.NetGrowthBytes = h.netGrowthBytes
+		st.NetGrowthBytes = h.trendGrowthBytes()
+		st.SlopeBytesS = h.slopeBps
+		st.Climbing = h.climbing
 		st.LongPeakProcesses = h.peakProcs
 		if h.lastGrowth.After(h.lastActivity) && !h.lastActivity.IsZero() {
 			st.QuietS = int64(a.now.Sub(h.lastActivity).Seconds())
@@ -697,9 +697,11 @@ type SeriesStats struct {
 	// window's growth against a lifetime's release is not a comparison.
 	LongGrowthBytes   int64
 	LongPeakProcesses int
-	// NetGrowthBytes is the signed lifetime change: what the group actually
-	// added, as opposed to the sum of every upward step.
+	// NetGrowthBytes is what the group is on pace to add across the trend
+	// window, from the fitted slope — not an accumulated sum, which drifts at
+	// partial coverage.
 	NetGrowthBytes   int64
+	Climbing         bool
 	ProcessCount     int
 	PeakProcessCount int
 }
@@ -843,12 +845,7 @@ func (a *Attributor) sweepDeadSeries() {
 		// window purely from short-lived children coming and going.
 		if s.prevBytes > 0 {
 			a.lastBytes[key] = s.prevBytes
-			// The member leaves the baseline as it leaves the group.
-			if s.baselineContribution > 0 {
-				if h := a.history[s.group]; h != nil {
-					h.sizeAtStart -= s.baselineContribution
-				}
-			}
+
 			if h := a.history[s.group]; h != nil {
 				h.releaseBytes += s.prevBytes
 				// ...and the same amount leaves the group's net size. Adding an
@@ -932,6 +929,82 @@ func (a *Attributor) retireGoneGroups(alive map[string]int, now time.Time) {
 			delete(a.history, gid)
 		}
 	}
+}
+
+// addTrend records the group's total and refits the slope.
+//
+// This replaces accumulated "growth" entirely. At 75% coverage, summing
+// per-member deltas drifts no matter how the bookkeeping is arranged: five
+// separate attempts produced 73 GB, 16250 MB, 2846 MB, 507 MB and a baseline
+// that went negative, all for a group holding a steady 3.2 GB. A least-squares
+// slope over the totals themselves cannot drift — it is a direct measurement
+// of whether the group is still getting bigger.
+func (h *history) addTrend(at time.Time, total int64) {
+	h.trend = append(h.trend, trendPoint{at: at, bytes: total})
+	cutoff := at.Add(-trendWindowS * time.Second)
+	i := 0
+	for i < len(h.trend) && h.trend[i].at.Before(cutoff) {
+		i++
+	}
+	if i > 0 {
+		h.trend = append(h.trend[:0], h.trend[i:]...)
+	}
+	h.slopeBps, h.climbing = fitSlope(h.trend)
+}
+
+// trendGrowthBytes is what the group is on pace to add across the trend
+// window, which is the quantity the leak branch's threshold is expressed in.
+func (h *history) trendGrowthBytes() int64 {
+	if h.slopeBps <= 0 {
+		return 0
+	}
+	return int64(h.slopeBps * trendWindowS)
+}
+
+// fitSlope returns the least-squares slope in bytes/second, and whether the
+// climb is consistent enough to call a trend: the fit must explain most of the
+// movement, and the endpoints must agree with it. A flat group with noise
+// produces a near-zero slope and climbing=false.
+func fitSlope(pts []trendPoint) (float64, bool) {
+	if len(pts) < 8 {
+		return 0, false
+	}
+	t0 := pts[0].at
+	var sx, sy, sxx, sxy float64
+	n := float64(len(pts))
+	for _, p := range pts {
+		x := p.at.Sub(t0).Seconds()
+		y := float64(p.bytes)
+		sx += x
+		sy += y
+		sxx += x * x
+		sxy += x * y
+	}
+	den := n*sxx - sx*sx
+	if den == 0 {
+		return 0, false
+	}
+	slope := (n*sxy - sx*sy) / den
+	inter := (sy - slope*sx) / n
+	// R^2: how much of the variance the line explains.
+	var ssTot, ssRes float64
+	mean := sy / n
+	for _, p := range pts {
+		x := p.at.Sub(t0).Seconds()
+		pred := slope*x + inter
+		ssRes += (float64(p.bytes) - pred) * (float64(p.bytes) - pred)
+		ssTot += (float64(p.bytes) - mean) * (float64(p.bytes) - mean)
+	}
+	r2 := 0.0
+	if ssTot > 0 {
+		r2 = 1 - ssRes/ssTot
+	}
+	// A trend needs a real climb and a fit that explains it. Half a megabyte
+	// per second over the window is 600 MB — material; below that the group is
+	// not what the user needs to hear about.
+	const minSlopeBps = 200 << 10
+	const minR2 = 0.5
+	return slope, slope >= minSlopeBps && r2 >= minR2
 }
 
 // ensureHistory returns the group's long-horizon record, creating it if needed.
