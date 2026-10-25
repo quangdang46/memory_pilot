@@ -71,6 +71,17 @@ const (
 	// observed, and 25% of this machine is outside sampling coverage at any
 	// moment. The daemon passes the longest gap-free run it actually recorded;
 	// see GroupFacts.ObservedFor.
+	// LifetimeIdleCPUS is the CPU a process may have consumed over its whole
+	// life and still count as idle.
+	LifetimeIdleCPUS = 60.0
+	// LifetimeIdleRate is CPU-seconds per second of life. 2% of one core:
+	// nothing is running there. The rate matters more than the total — a
+	// process that started five minutes ago has not had the chance to
+	// accumulate anything, and an absolute bar would call it idle.
+	LifetimeIdleRate = 0.02
+	// MinLifetimeIdleS is how long a process must have existed before lifetime
+	// CPU says anything at all. Same bar as abandonment: ten minutes.
+	MinLifetimeIdleS = 600.0
 	// MaxNamed caps how many processes the sentence lists. The count and the
 	// total stay exact; the detail does not need to be a wall. Measured in the
 	// first live run: 39 candidates, each with two lines of evidence — a
@@ -112,6 +123,14 @@ type Member struct {
 	QuietFor time.Duration
 	// ParentAlive reports whether the process that started it still runs.
 	ParentAlive bool
+	// CpuTotalS is the CPU this process has consumed in its entire life, and
+	// AgeS is how long it has existed. Together they are evidence independent
+	// of how long the sampler has been running: a process that has burned
+	// 0.4 s of CPU in two days while holding 900 MB is idle by its own
+	// accounting, whether or not we were watching when it started.
+	CpuTotalS float64
+	AgeS      float64
+
 	// ParentGone is true only when this process was observed under a parent
 	// that has since exited. A process launchd started directly has no parent
 	// in the ordinary sense and is not evidence of anything.
@@ -260,7 +279,15 @@ func AssessMembers(f GroupFacts) []Candidate {
 		// "idle for 6m45s" — the harness's own runtime. A quiet period longer
 		// than the observation window is a statement about the observer, not
 		// the process.
-		if f.ObservedFor > 0 && m.QuietFor > f.ObservedFor {
+		// A quiet period longer than the observation window is not a claim we
+		// can make from the quiet clock. It may still be a claim we can make
+		// from the process's own CPU accounting, which is why this only
+		// suppresses the first kind of evidence.
+		observedQuiet := m.QuietFor
+		lifetimeIdle := m.CpuTotalS <= LifetimeIdleCPUS &&
+			m.AgeS >= MinLifetimeIdleS &&
+			m.CpuTotalS/m.AgeS <= LifetimeIdleRate
+		if f.ObservedFor > 0 && m.QuietFor > f.ObservedFor && !lifetimeIdle {
 			continue
 		}
 		if isProtected(m.Exe) {
@@ -271,9 +298,16 @@ func AssessMembers(f GroupFacts) []Candidate {
 			InterruptionRisk: 0.8,
 			State:            StateSuspicious,
 		}
-		c.Evidence = append(c.Evidence,
-			fmt.Sprintf("holds %d MB, no CPU for %s",
-				m.Footprint>>20, m.QuietFor.Round(time.Second)))
+		if observedQuiet > f.ObservedFor && f.ObservedFor > 0 && lifetimeIdle {
+			c.Evidence = append(c.Evidence,
+				fmt.Sprintf("holds %d MB, %.1f s of CPU in %s of life — idle by its own record",
+					m.Footprint>>20, m.CpuTotalS,
+					time.Duration(m.AgeS)*time.Second))
+		} else {
+			c.Evidence = append(c.Evidence,
+				fmt.Sprintf("holds %d MB, no CPU for %s",
+					m.Footprint>>20, m.QuietFor.Round(time.Second)))
+		}
 
 		// Three parent states, and only one of them is evidence:
 		//   ParentGone  — was under a parent, parent exited, macOS reparented
@@ -281,8 +315,12 @@ func AssessMembers(f GroupFacts) []Candidate {
 		//   ParentAlive — the parent still runs, so a session may own it.
 		//   neither     — the parent is outside coverage (75% on this machine).
 		//                 Unknown, and stated as unknown.
+		quiet := m.QuietFor
+		if lifetimeIdle && quiet < MinQuietForAbandoned {
+			quiet = MinQuietForAbandoned // lifetime evidence clears the bar
+		}
 		switch {
-		case m.ParentGone && m.QuietFor >= MinQuietForAbandoned:
+		case m.ParentGone && quiet >= MinQuietForAbandoned:
 			c.State = StateAbandoned
 			c.AbandonmentConfidence = 0.85
 			c.InterruptionRisk = 0.15
@@ -294,7 +332,7 @@ func AssessMembers(f GroupFacts) []Candidate {
 			c.Evidence = append(c.Evidence,
 				fmt.Sprintf("parent gone, quiet %s — short of the %s bar",
 					m.QuietFor.Round(time.Second), MinQuietForAbandoned))
-		case m.QuietFor >= MinQuietForAbandoned && m.ParentAlive:
+		case quiet >= MinQuietForAbandoned && m.ParentAlive:
 			// A live parent that is not using it. This is the rust-analyzer
 			// case: the session that spawned it is still open but idle, and the
 			// child has held gigabytes without doing anything for hours.
@@ -305,7 +343,7 @@ func AssessMembers(f GroupFacts) []Candidate {
 				"parent still running, but this process has done no work for "+
 					m.QuietFor.Round(time.Second).String()+" — closing it loses nothing "+
 					"it is currently doing, though the parent may restart it")
-		case m.QuietFor >= MinQuietForAbandoned:
+		case quiet >= MinQuietForAbandoned:
 			// The parent is not in coverage, so whether anything owns this
 			// process is unknown. Saying "parent gone" here would be a guess,
 			// and the first live run made exactly that guess about Finder.

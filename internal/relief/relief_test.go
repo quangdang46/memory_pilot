@@ -452,3 +452,62 @@ func TestUnboundedObservationKeepsCandidates(t *testing.T) {
 		t.Errorf("%d candidates with no bound, want 1", len(cs))
 	}
 }
+
+// The live orphan: a child whose parent exited, holding 900 MB, running for
+// 45 minutes with 0.41 s of CPU in its whole life. The sampler had only been
+// watching for 12 minutes, so the quiet clock could not carry the claim — but
+// the process's own accounting can, and refusing it would mean never naming a
+// real orphan that predates the daemon.
+func TestLifetimeIdleEvidenceNamesARealOrphan(t *testing.T) {
+	f := GroupFacts{
+		ObservedFor: 12 * time.Minute, // harness started long after the process
+		Members: []Member{
+			{Pid: 48398, Exe: "orphanprobe", Footprint: 904 << 20,
+				QuietFor: 45 * time.Minute, CpuTotalS: 0.41, AgeS: 2700,
+				ParentGone: true},
+		},
+	}
+	cs := AssessMembers(f)
+	if len(cs) != 1 {
+		t.Fatalf("%d candidates, want the real orphan", len(cs))
+	}
+	if cs[0].State != StateAbandoned {
+		t.Errorf("orphan with 0.41 s of CPU in 45 min classified %q: %v",
+			cs[0].State, cs[0].Evidence)
+	}
+	joined := strings.Join(cs[0].Evidence, " ")
+	if !strings.Contains(joined, "idle by its own record") {
+		t.Errorf("evidence does not say why the quiet claim holds: %v", cs[0].Evidence)
+	}
+}
+
+// The same shape without the lifetime evidence is a guess, and stays out.
+func TestBusyLifetimeIsNotIdle(t *testing.T) {
+	f := GroupFacts{
+		ObservedFor: 12 * time.Minute,
+		Members: []Member{
+			// 400 s of CPU in 45 minutes: working, whatever the quiet clock says.
+			{Pid: 1, Exe: "node", Footprint: 900 << 20,
+				QuietFor: 45 * time.Minute, CpuTotalS: 400, AgeS: 2700,
+				ParentAlive: true},
+		},
+	}
+	if cs := AssessMembers(f); len(cs) != 0 {
+		t.Errorf("a process with 400 s of CPU was named releasable: %v", cs)
+	}
+}
+
+// A process younger than an hour has not had the chance to prove idleness by
+// lifetime CPU, however small the number.
+func TestYoungProcessCannotClaimLifetimeIdle(t *testing.T) {
+	f := GroupFacts{
+		ObservedFor: 12 * time.Minute,
+		Members: []Member{
+			{Pid: 2, Exe: "build", Footprint: 900 << 20, QuietFor: 45 * time.Minute,
+				CpuTotalS: 0.1, AgeS: 300, ParentAlive: true},
+		},
+	}
+	if cs := AssessMembers(f); len(cs) != 0 {
+		t.Errorf("a 5-minute-old process claimed lifetime idleness: %v", cs)
+	}
+}

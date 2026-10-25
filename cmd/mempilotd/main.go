@@ -324,6 +324,7 @@ func (h *daemonHandler) recommendRelief(s model.SystemSample, score float64) {
 		facts = append(facts, relief.Member{
 			Pid: m.Pid, Exe: m.Exe, Footprint: m.Footprint,
 			QuietFor: m.QuietFor, ParentAlive: m.ParentAlive, ParentGone: m.ParentGone,
+			CpuTotalS: m.CpuTotalS, AgeS: m.AgeS,
 		})
 	}
 	// Bound every quiet claim by what the sampler actually recorded. Seven

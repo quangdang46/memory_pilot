@@ -1126,11 +1126,15 @@ func (a *Attributor) WindowStats(anchor string) (SeriesStats, bool) {
 // assessment. Attribution knows each member's footprint and when it last
 // burned CPU; the relief engine decides what that means.
 type MemberFact struct {
-	Pid         int32
-	Exe         string
-	Group       string
-	Footprint   int64
-	QuietFor    time.Duration
+	Pid       int32
+	Exe       string
+	Group     string
+	Footprint int64
+	QuietFor  time.Duration
+	// CpuTotalS and AgeS are the process's own accounting: evidence that does
+	// not depend on how long the sampler has been running.
+	CpuTotalS   float64
+	AgeS        float64
 	ParentAlive bool
 	ParentGone  bool
 }
@@ -1224,6 +1228,8 @@ func (a *Attributor) Members() []MemberFact {
 		out = append(out, MemberFact{
 			Pid: s.id.Pid, Exe: s.id.Exe, Group: s.group,
 			Footprint: s.prevBytes, QuietFor: quiet,
+			CpuTotalS:   s.prevCPU,
+			AgeS:        a.now.Sub(s.id.Time()).Seconds(),
 			ParentAlive: parentAlive, ParentGone: parentGone,
 		})
 	}
