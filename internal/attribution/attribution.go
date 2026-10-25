@@ -98,6 +98,7 @@ type history struct {
 	lastGrowth   time.Time // last sample where the group grew
 	lastActivity time.Time // last sample where any member burned CPU
 	growthBytes  int64     // total positive growth since firstSeen
+	releaseBytes int64     // total frees since firstSeen
 	peakProcs    int       // high-water process count
 	activeS      int64
 	quietS       int64
@@ -190,6 +191,15 @@ func (a *Attributor) Observe(snap model.ProcessSnapshot, sys model.SystemSample)
 		if grew {
 			tickGrew[gid] = true
 			a.history[gid].growthBytes += d
+		} else if d < 0 {
+			// Release must be accumulated over the long horizon too. The
+			// window-scoped release resets every 5 minutes, so a group that
+			// allocates and frees repeatedly (a sawtooth) showed release=0 in
+			// every window where the freeing happened to land in the previous
+			// one — and was classified a leak. Measured: probe-sawtooth
+			// reported release=0 in all four windows while continuously
+			// releasing memory.
+			a.history[gid].releaseBytes += -d
 		}
 		a.history[gid].peakGrowthMB = maxInt64(a.history[gid].peakGrowthMB, d>>20)
 	}
@@ -384,6 +394,7 @@ func (a *Attributor) SeriesFor(anchor string) SeriesStats {
 		st.QuietS = h.quietS
 		if span > 0 {
 			st.SlopeBytesS = float64(h.growthBytes) / span
+			st.ReleaseBytes = h.releaseBytes
 		}
 		if h.lastGrowth.After(h.lastActivity) && !h.lastActivity.IsZero() {
 			st.QuietS = int64(a.now.Sub(h.lastActivity).Seconds())

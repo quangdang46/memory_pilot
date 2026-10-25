@@ -453,3 +453,42 @@ func TestLeakVisibleWhileResidentCollapses(t *testing.T) {
 			st.SlopeBytesS)
 	}
 }
+
+// Release must be tracked over the long horizon, not only within the current
+// window. A sawtooth allocates and frees repeatedly; if the frees land in a
+// window boundary its per-window release reads 0 and it is misread as a leak.
+// Measured: probe-sawtooth reported release=0 in four consecutive windows
+// while continuously releasing memory.
+func TestReleaseAccumulatesAcrossResets(t *testing.T) {
+	a := New(60)
+	base := time.Now()
+	it := int64(100 << 20)
+	for i := 0; i < 40; i++ {
+		at := base.Add(time.Duration(i) * 15 * time.Second)
+		// grow 30 MB, then release 30 MB, alternating — no net accumulation
+		if i%2 == 0 {
+			it += 30 << 20
+		} else {
+			it -= 30 << 20
+		}
+		s := model.ProcessSnapshot{At: at, Quality: model.QualGood,
+			Coverage: model.Coverage{Attempted: 1, Succeeded: 1},
+			Processes: []model.ProcessSample{{
+				Identity: model.ProcessIdentity{Pid: 5, Ppid: 1, StartTime: t0,
+					Executable: "sawtooth"},
+				FootprintBytes: uint64(it), Quality: model.QualGood}}}
+		a.Observe(s, sys(200000))
+		if i%4 == 3 { // close a window every minute
+			a.Window(sys(200000))
+			a.Reset()
+		}
+	}
+	st := a.SeriesFor("sawtooth")
+	if st.ReleaseBytes <= 0 {
+		t.Errorf("release=0 after 40 alternating samples — cycling invisible")
+	}
+	if st.ReleaseBytes < st.GrowthBytes/2 {
+		t.Errorf("release %d MB vs growth %d MB: sawtooth should release about as much as it grows",
+			st.ReleaseBytes>>20, st.GrowthBytes>>20)
+	}
+}
