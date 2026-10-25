@@ -642,3 +642,42 @@ func TestPreexistingProcessesAreBaseline(t *testing.T) {
 			"startup are baseline, not growth", got)
 	}
 }
+
+// A process that exits releases its memory. Without this the accounting only
+// runs one way — arrivals add, departures never subtract — so a group that
+// spawns short-lived children accumulates their peak footprint forever.
+// Measured: wezterm-gui read 632-787 MB of "growth" per 5-minute window from
+// compilers and helpers coming and going, while holding none of it.
+func TestExitedProcessReleasesItsMemory(t *testing.T) {
+	a := New(300)
+	base := time.Now()
+	// A long-lived parent.
+	parent := model.ProcessSample{Identity: model.ProcessIdentity{
+		Pid: 9001, Ppid: 1, StartTime: t0, Executable: "wezterm-gui"},
+		FootprintBytes: 50 << 20, Quality: model.QualGood}
+	// Build a snapshot: parent, plus one short-lived 200 MB child that appears
+	// on tick 2 and is gone by tick 4.
+	for i := 0; i < 8; i++ {
+		at := base.Add(time.Duration(i) * 15 * time.Second)
+		procs := []model.ProcessSample{parent}
+		if i >= 2 && i < 4 {
+			procs = append(procs, model.ProcessSample{Identity: model.ProcessIdentity{
+				Pid: 9002, Ppid: 9001, StartTime: base.Add(2 * 15 * time.Second),
+				Executable: "clang"}, FootprintBytes: 200 << 20,
+				Quality: model.QualGood})
+		}
+		a.Observe(model.ProcessSnapshot{At: at, Quality: model.QualGood,
+			Coverage:  model.Coverage{Attempted: len(procs), Succeeded: len(procs)},
+			Processes: procs}, sys(200000))
+	}
+	h := a.history["wezterm-gui"]
+	if h == nil {
+		t.Fatal("no history for the terminal group")
+	}
+	const arrived = int64(200 << 20)
+	if h.releaseBytes < arrived {
+		t.Errorf("release %d MB, want >= %d MB: a 200 MB child exited and "+
+			"nothing was counted as released — the group only ever grows",
+			h.releaseBytes>>20, arrived>>20)
+	}
+}

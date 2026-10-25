@@ -34,6 +34,11 @@ type series struct {
 	delta     int64 // accumulated positive growth in window
 	release   int64 // accumulated frees, tracked separately
 	deadTicks int   // consecutive samples the process was absent
+	// group is the anchor this process belonged to, remembered so a process
+	// that exits can still be charged to the right group: by the time it is
+	// swept it is absent from the snapshot, so walking the parent chain can no
+	// longer find its ancestry.
+	group string
 
 	// Activity correlation counters (MP-ALG-005): a group that grows while
 	// its processes burn CPU is doing work; a group that grows while they sit
@@ -214,6 +219,7 @@ func (a *Attributor) Observe(snap model.ProcessSnapshot, sys model.SystemSample)
 		// time by 61, which is how "quiet for 45 minutes" turned into
 		// "quiet for 11814 s" and made every big group look like a leak.
 		gid := a.groupFor(id)
+		s.group = gid
 		if a.history[gid] == nil {
 			a.history[gid] = &history{firstSeen: snap.At}
 		}
@@ -650,6 +656,18 @@ func (a *Attributor) sweepDeadSeries() {
 		s.deadTicks++
 		if s.deadTicks < 2 {
 			continue
+		}
+		// A process that exits gives its memory back to the system, and that is
+		// release — the mirror of the rule that a process arriving is growth
+		// (see Observe). Without it the accounting only ever runs one way:
+		// a terminal that spawns a compiler per build would accumulate its
+		// peak footprint forever while holding nothing. Measured on this
+		// machine: wezterm-gui read 632-787 MB of "growth" per 5-minute
+		// window purely from short-lived children coming and going.
+		if s.prevBytes > 0 {
+			if h := a.history[s.group]; h != nil {
+				h.releaseBytes += s.prevBytes
+			}
 		}
 		delete(a.series, key)
 		delete(a.groups, key)
