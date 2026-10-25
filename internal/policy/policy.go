@@ -54,10 +54,10 @@ func (e *Engine) Break(kind model.ActionKind)      { e.broken[kind] = true }
 func (e *Engine) IsBroken(k model.ActionKind) bool { return e.broken[k] }
 
 type Input struct {
-	Pressure model.PressureState
-	Forecast model.Forecast
+	Pressure       model.PressureState
+	Forecast       model.Forecast
 	Classification classify.Verdict
-	Now      time.Time
+	Now            time.Time
 	// OwnedTargets: pre-authorized managed-workload tokens from the spawn
 	// registry. L2 can ONLY target these — foreign processes never appear.
 	OwnedTargets []string
@@ -76,8 +76,14 @@ func (e *Engine) Evaluate(in Input) model.Decision {
 		d.Reason = "no pressure"
 		return d
 	case model.LevelWarn:
+		// A candidate exists, so this is not "no action". Returning early with
+		// NoAction still true (the zero value) meant the advisory was planned
+		// and then silently discarded by the pipeline — measured in the field:
+		// 50 Prevent samples produced 'policy_no_action' with
+		// candidates=["emit_advisory"] and no action ever executed.
 		d.Reason = "watch/prevent: advisory only in this state"
 		d.Candidates = append(d.Candidates, model.Candidate{Kind: model.ActionEmitAdvisory})
+		d.NoAction = false
 		return d
 	}
 	// Prevent/Critical: expected-benefit reasoning
