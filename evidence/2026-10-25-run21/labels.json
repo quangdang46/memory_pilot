@@ -1,0 +1,34 @@
+{
+  "probe-leak": {
+    "mode": "leak",
+    "mb": 6,
+    "truth": "leak",
+    "expect": "leak_suspicion"
+  },
+  "probe-plateau": {
+    "mode": "plateau",
+    "mb": 14,
+    "grow_ticks": 8,
+    "truth": "cache",
+    "expect": "cache_or_retrievable"
+  },
+  "probe-workload": {
+    "mode": "workload",
+    "mb": 6,
+    "truth": "work",
+    "expect": "workload_growth"
+  },
+  "probe-sawtooth": {
+    "mode": "sawtooth",
+    "mb": 10,
+    "truth": "cache",
+    "expect": "cache_or_retrievable"
+  },
+  "probe-children": {
+    "mode": "children",
+    "children": 20,
+    "mb": 12,
+    "truth": "subprocess",
+    "expect": "subprocess_accumulation"
+  }
+}
