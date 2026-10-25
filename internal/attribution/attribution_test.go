@@ -887,3 +887,52 @@ func TestChurnDoesNotInflateNetSize(t *testing.T) {
 			st.NetGrowthBytes>>20)
 	}
 }
+
+// A coverage gap is not a departure. This machine sees 75% of processes each
+// tick; 201 are unreadable, so a group's members flicker in and out of the
+// snapshot. Two things went wrong and both are covered here:
+//
+//   - a process reappearing after its series was swept was counted as a fresh
+//     arrival every time it flickered (seenIdentities now stops that);
+//   - the sweep had already charged its whole footprint as release, and nothing
+//     gave that back on reappearance (lastBytes now does).
+//
+// Measured before the fix: one steady 300 MB process flickering through five
+// gaps read -1500 MB of net growth. On the live machine node swung +2878 MB
+// while holding 3.2 GB steady.
+func TestCoverageGapsDoNotChangeNetSize(t *testing.T) {
+	a := New(300)
+	base := time.Now()
+	mk := func(at time.Time, visible bool) model.ProcessSnapshot {
+		var procs []model.ProcessSample
+		if visible {
+			procs = append(procs, model.ProcessSample{Identity: model.ProcessIdentity{
+				Pid: 900, Ppid: 1, StartTime: t0, Executable: "node"},
+				FootprintBytes: 300 << 20, Quality: model.QualGood})
+		}
+		return model.ProcessSnapshot{At: at, Quality: model.QualGood,
+			Coverage:  model.Coverage{Attempted: 1, Succeeded: len(procs)},
+			Processes: procs}
+	}
+	tick := 0
+	at := func() time.Time {
+		tick++
+		return base.Add(time.Duration(tick) * 15 * time.Second)
+	}
+	for cycle := 0; cycle < 5; cycle++ {
+		for i := 0; i < 3; i++ { // visible
+			a.Observe(mk(at(), true), sys(200000))
+		}
+		for i := 0; i < 5; i++ { // hidden by a coverage gap
+			a.Observe(mk(at(), false), sys(200000))
+		}
+	}
+	a.Observe(mk(at(), true), sys(200000)) // ends visible, as it started
+
+	st := a.SeriesFor("node")
+	if st.NetGrowthBytes > 50<<20 || st.NetGrowthBytes < -50<<20 {
+		t.Errorf("net growth %d MB for a steady 300 MB process seen through "+
+			"coverage gaps: a gap is being accounted as an arrival, a departure, "+
+			"or both", st.NetGrowthBytes>>20)
+	}
+}

@@ -99,8 +99,21 @@ type Attributor struct {
 	lastSnapAt     time.Time
 	firstSnapAt    time.Time // first snapshot ever; separates "arrived" from "was always here"
 	observedGrowth int64
-	lastCoverage   model.Coverage
-	lastQuality    model.Quality
+	// seenIdentities records every identity already counted as an arrival.
+	// Series are swept after two dead ticks, so a process hidden by a coverage
+	// gap (75% visibility on this machine) returns with no series while
+	// start > firstSnapAt is still true, and would be counted afresh each time
+	// it flickers. Measured: one steady 300 MB process flickering produced
+	// -1500 MB of net; node swung +2878 MB while holding 3.2 GB steady.
+	seenIdentities map[string]bool
+	// lastBytes remembers the footprint an identity held when its series was
+	// swept. A process hidden by a coverage gap is not gone; if it reappears,
+	// the release charged at sweep time must be given back, or every gap
+	// shrinks the group's net by the process's whole size. Measured: a steady
+	// 300 MB process flickering in and out read -1500 MB of net growth.
+	lastBytes    map[string]int64
+	lastCoverage model.Coverage
+	lastQuality  model.Quality
 
 	// History is the long-horizon record the classifier needs. A 5-minute
 	// report window can never satisfy a 20-minute "sustained growth"
@@ -135,7 +148,9 @@ type history struct {
 }
 
 func New(windowS int64) *Attributor {
-	return &Attributor{series: map[string]*series{}, groups: map[string]string{},
+	return &Attributor{series: map[string]*series{},
+		seenIdentities: map[string]bool{}, lastBytes: map[string]int64{},
+		groups:  map[string]string{},
 		parents: map[int32]int32{}, history: map[string]*history{}, windowS: windowS}
 }
 
@@ -187,9 +202,24 @@ func (a *Attributor) Observe(snap model.ProcessSnapshot, sys model.SystemSample)
 			// probe-children held 127 MB across nine processes while the
 			// window reported growth 5 MB, because each child was spawned at
 			// full size and only its later change was ever counted.
-			if a.firstSnapAt.IsZero() || time.Unix(id.StartSec, id.StartUsec*1000).After(a.firstSnapAt) {
+			// Count an arrival once per identity, ever — not once per series.
+			if !a.seenIdentities[key] &&
+				(a.firstSnapAt.IsZero() || time.Unix(id.StartSec, id.StartUsec*1000).After(a.firstSnapAt)) {
 				d = now
 			}
+			// If this identity was swept while only hidden by a coverage gap,
+			// undo the release that sweep charged. A process that really exited
+			// and a new one with the same identity cannot be distinguished, but
+			// identity includes start time, so a reappearance is the same
+			// process — the sweep was wrong.
+			if back, ok := a.lastBytes[key]; ok && back > 0 {
+				if h := a.history[a.groupFor(id)]; h != nil {
+					h.releaseBytes -= back
+					h.netGrowthBytes += back
+				}
+				delete(a.lastBytes, key)
+			}
+			a.seenIdentities[key] = true
 			s = &series{id: id, ppid: p.Identity.Ppid, alive: true}
 			a.series[key] = s
 		}
@@ -762,6 +792,7 @@ func (a *Attributor) sweepDeadSeries() {
 		// machine: wezterm-gui read 632-787 MB of "growth" per 5-minute
 		// window purely from short-lived children coming and going.
 		if s.prevBytes > 0 {
+			a.lastBytes[key] = s.prevBytes
 			if h := a.history[s.group]; h != nil {
 				h.releaseBytes += s.prevBytes
 				// ...and the same amount leaves the group's net size. Adding an
