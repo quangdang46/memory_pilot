@@ -1135,6 +1135,23 @@ type MemberFact struct {
 	ParentGone  bool
 }
 
+// quietWitnessFrom returns the earliest moment attribution can honestly claim
+// to have watched this process without CPU use.
+func (a *Attributor) quietWitnessFrom(s *series) time.Time {
+	// A process that arrived while we were watching: the clock starts at its
+	// birth, which we observed.
+	arrival := s.id.Time()
+	if !arrival.IsZero() && !a.firstSnapAt.IsZero() && arrival.After(a.firstSnapAt) {
+		return arrival
+	}
+	// A process that was already running when the daemon started: the clock
+	// starts when we started watching.
+	if !a.firstSnapAt.IsZero() {
+		return a.firstSnapAt
+	}
+	return time.Time{}
+}
+
 // Members returns every live process with the facts the relief engine needs.
 //
 // The group a process belongs to is not a filter here: an abandoned process
@@ -1148,11 +1165,24 @@ func (a *Attributor) Members() []MemberFact {
 		if !s.alive || s.prevBytes <= 0 {
 			continue
 		}
-		quiet := a.now.Sub(s.lastCPU)
-		if s.lastCPU.IsZero() || quiet < 0 {
-			quiet = a.now.Sub(s.id.Time())
-			if s.id.Time().IsZero() {
-				quiet = 0
+		// QuietFor is silence we witnessed, never silence we assume. The
+		// fallback used to be the process's own start time, which for a
+		// long-running process is days — so a daemon restart made every
+		// candidate read "no CPU for 5m30s", the exact age of the daemon.
+		// Measured in the first post-restart L1 run: 33 candidates, all of
+		// them with identical quiet time, none of them actually observed.
+		//
+		// The witness starts when we first saw the process in this situation:
+		// since it arrived, or since the oldest snapshot we hold.
+		quiet := time.Duration(0)
+		if witness := a.quietWitnessFrom(s); !witness.IsZero() {
+			if since := a.now.Sub(witness); since > 0 {
+				quiet = since
+			}
+		}
+		if !s.lastCPU.IsZero() {
+			if silent := a.now.Sub(s.lastCPU); silent > 0 && silent < quiet {
+				quiet = silent // it did work more recently than we have watched
 			}
 		}
 		// ParentGone means the parent we saw has exited. macOS reparents an

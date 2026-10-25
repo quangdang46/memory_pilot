@@ -1155,3 +1155,28 @@ func TestUnreadableCPUIsNotSilence(t *testing.T) {
 		}
 	}
 }
+
+// A daemon restart must not turn every process into a candidate. Measured in
+// the first post-restart L1 run: 33 processes, every one reporting "no CPU for
+// 5m30s" — exactly the age of the daemon, and none of it observed. The quiet
+// clock started at each process's own start time, which for a long-running
+// process is days.
+func TestQuietPeriodIsWhatWasWatchedNotProcessAge(t *testing.T) {
+	a := New(60)
+	// A process that started two days ago, quiet since we started looking.
+	old := t0.Add(-48 * time.Hour)
+	s := snap(map[[2]any]uint64{{int32(800), old}: 900 << 20})
+	a.Observe(s, sys(200000))
+	a.Observe(s, sys(200000))
+
+	var quiet time.Duration
+	for _, m := range a.Members() {
+		if m.Pid == 800 {
+			quiet = m.QuietFor
+		}
+	}
+	if quiet > 10*time.Second {
+		t.Errorf("a process watched for two samples reports quiet for %v — "+
+			"that is its age, not our observation", quiet)
+	}
+}
