@@ -114,3 +114,23 @@ collapse of `resident_size` — but it does not support "footprint fails too".
 
 **Corrected conclusion:** `phys_footprint` is the usable metric.
 `resident_size` is not, and it is the one the code uses.
+
+## 7. Noise comparison: a static process reads as 217 MB of movement with rss
+
+A process held a fixed 200 MB and did nothing for 60 s. Both metrics sampled
+13 times:
+
+| metric | min | max | spread |
+|---|---|---|---|
+| `phys_footprint` | 207.3 MB | 217.5 MB | **10.2 MB** |
+| `resident_size` | 8.1 MB | 225.2 MB | **217.1 MB** |
+
+`resident_size` moves by 217 MB on a process that changed nothing. It is not
+merely biased under pressure; it is unusable as a growth signal at the scale
+this product works at (a few MB/s of sustained growth).
+
+Both readings come from the same `proc_pid_rusage` call the collector already
+makes. Only `phys_footprint` (`ru.f7`) is kept in `FootprintBytes`; the code
+measures `ru.f6` (`ResidentSize`) for attribution.
+
+Repro: `python3 footprint_noise.py`.
