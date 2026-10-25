@@ -326,7 +326,11 @@ func (h *daemonHandler) recommendRelief(s model.SystemSample, score float64) {
 			QuietFor: m.QuietFor, ParentAlive: m.ParentAlive, ParentGone: m.ParentGone,
 		})
 	}
-	cs := relief.AssessMembers(relief.GroupFacts{Members: facts})
+	// Bound every quiet claim by what the sampler actually recorded. Seven
+	// minutes after a restart, unmodified, this produced 43 processes "idle for
+	// 6m45s" — the age of the harness, not the silence of the processes.
+	observed := time.Duration(h.pipe.Attr.QuietBoundS()) * time.Second
+	cs := relief.AssessMembers(relief.GroupFacts{Members: facts, ObservedFor: observed})
 	if len(cs) == 0 {
 		return
 	}

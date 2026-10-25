@@ -413,3 +413,42 @@ func TestNothingReleasableWithShortfallIsHonest(t *testing.T) {
 		t.Errorf("an empty recommendation talks about closing things:\n%s", txt)
 	}
 }
+
+// A quiet period longer than the observation window is a statement about the
+// observer. Measured: seven minutes after a restart, 43 processes were reported
+// "idle for 6m45s" — the harness's runtime, dressed as their silence.
+func TestQuietBeyondObservationIsNotAClaim(t *testing.T) {
+	f := GroupFacts{
+		ObservedFor: 7 * time.Minute,
+		Members: []Member{
+			// Claims 19 hours of silence from a sampler that ran for 7 minutes.
+			{Pid: 1, Exe: "rust-analyzer", Footprint: 900 << 20,
+				QuietFor: 19 * time.Hour, ParentAlive: true},
+			// Genuinely silent for longer than we watched: same problem.
+			{Pid: 2, Exe: "node", Footprint: 800 << 20,
+				QuietFor: 8 * time.Minute, ParentAlive: true},
+			// Within the window and past the suspicious bar: a real candidate.
+			{Pid: 3, Exe: "leftover-build", Footprint: 700 << 20,
+				QuietFor: 6 * time.Minute, ParentAlive: true},
+		},
+	}
+	cs := AssessMembers(f)
+	if len(cs) != 1 {
+		t.Fatalf("%d candidates, want only the one within the observation window", len(cs))
+	}
+	if !strings.Contains(cs[0].Group, "leftover-build") {
+		t.Errorf("wrong candidate survived: %s", cs[0].Group)
+	}
+}
+
+// And with no bound given, the old behaviour is unchanged: callers that know
+// their own observation window are not second-guessed.
+func TestUnboundedObservationKeepsCandidates(t *testing.T) {
+	f := GroupFacts{Members: []Member{
+		{Pid: 1, Exe: "build", Footprint: 900 << 20, QuietFor: 19 * time.Hour,
+			ParentGone: true},
+	}}
+	if cs := AssessMembers(f); len(cs) != 1 {
+		t.Errorf("%d candidates with no bound, want 1", len(cs))
+	}
+}

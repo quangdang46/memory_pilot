@@ -1127,12 +1127,22 @@ func TestRecentCPUSuppressesQuietClock(t *testing.T) {
 	base := snap(map[[2]any]uint64{{int32(500), t0}: 200 << 20})
 	base.Processes[0].CpuUserS = 100
 	a.Observe(base, sys(200000))
+	// The second snapshot is a tick later. With both at the same instant,
+	// "silence since the last CPU" is zero and the test would pass without
+	// exercising anything.
 	next := snap(map[[2]any]uint64{{int32(500), t0}: 200 << 20})
+	next.At = base.At.Add(15 * time.Second)
 	next.Processes[0].CpuUserS = 100.6 // 0.6 s in one tick
 	a.Observe(next, sys(200000))
+	// A third tick of silence, so the clock has somewhere to move from: the
+	// first sample seeds lastCPU by definition ("no evidence it ever worked").
+	last := snap(map[[2]any]uint64{{int32(500), t0}: 200 << 20})
+	last.At = next.At.Add(15 * time.Second)
+	last.Processes[0].CpuUserS = 100.6
+	a.Observe(last, sys(200000))
 	for _, m := range a.Members() {
-		if m.Pid == 500 && m.QuietFor > time.Second {
-			t.Errorf("0.6 s of CPU in the last tick left quietfor at %v", m.QuietFor)
+		if m.Pid == 500 && m.QuietFor > 20*time.Second {
+			t.Errorf("0.6 s of CPU one tick ago left quietfor at %v", m.QuietFor)
 		}
 	}
 }
@@ -1156,12 +1166,12 @@ func TestUnreadableCPUIsNotSilence(t *testing.T) {
 	}
 }
 
-// A daemon restart must not turn every process into a candidate. Measured in
-// the first post-restart L1 run: 33 processes, every one reporting "no CPU for
-// 5m30s" — exactly the age of the daemon, and none of it observed. The quiet
-// clock started at each process's own start time, which for a long-running
-// process is days.
-func TestQuietPeriodIsWhatWasWatchedNotProcessAge(t *testing.T) {
+// A daemon restart must not turn every process into a candidate. The quiet
+// clock for a process that was already running reports its own start time —
+// honest about what happened before we looked, but it must not be presented as
+// observation. QuietBoundS is what lets the relief engine refuse those claims;
+// measured defect: 43 processes "idle for 6m45s" seven minutes after a restart.
+func TestQuietBoundClampsUnobservedClaims(t *testing.T) {
 	a := New(60)
 	// A process that started two days ago, quiet since we started looking.
 	old := t0.Add(-48 * time.Hour)
@@ -1175,8 +1185,17 @@ func TestQuietPeriodIsWhatWasWatchedNotProcessAge(t *testing.T) {
 			quiet = m.QuietFor
 		}
 	}
-	if quiet > 10*time.Second {
-		t.Errorf("a process watched for two samples reports quiet for %v — "+
-			"that is its age, not our observation", quiet)
+	// Two days of CPU silence is the truth about the process; the honest part
+	// is that the sampler has only existed for an instant.
+	if quiet < time.Hour {
+		t.Errorf("quiet %v understates two days of CPU silence", quiet)
+	}
+	bound := time.Duration(a.QuietBoundS()) * time.Second
+	if bound > 5*time.Second {
+		t.Errorf("observation bound %v, want the age of the sampler (an instant)", bound)
+	}
+	if quiet <= bound {
+		t.Errorf("quiet %v does not exceed the bound %v — this test asserts "+
+			"that claims beyond the bound get clamped by the caller", quiet, bound)
 	}
 }

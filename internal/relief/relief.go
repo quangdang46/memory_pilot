@@ -66,6 +66,11 @@ const (
 	// MinReliefBytes: below this, closing something is a cleanup nicety, not a
 	// response to a shortfall.
 	MinReliefBytes = 100 << 20
+	// MaxQuietClaimS is the longest quiet period a recommendation may rest on.
+	// A process's CPU silence before the daemon started is not something it
+	// observed, and 25% of this machine is outside sampling coverage at any
+	// moment. The daemon passes the longest gap-free run it actually recorded;
+	// see GroupFacts.ObservedFor.
 	// MaxNamed caps how many processes the sentence lists. The count and the
 	// total stay exact; the detail does not need to be a wall. Measured in the
 	// first live run: 39 candidates, each with two lines of evidence — a
@@ -84,6 +89,11 @@ type GroupFacts struct {
 	IsTerminal bool          // shells, terminals: never a candidate
 	IsAgent    bool          // coding agents: never a candidate without opt-in
 	CacheRole  bool          // known cache (browser, indexer): retrievable
+
+	// ObservedFor is how long the sampler has watched without a coverage gap.
+	// A quiet period longer than this cannot be claimed as observed. Zero means
+	// unbounded (callers that already know better).
+	ObservedFor time.Duration
 
 	// Members are the group's individual processes. A group's footprint hides
 	// the case that matters most: one abandoned member holding gigabytes while
@@ -245,6 +255,13 @@ func AssessMembers(f GroupFacts) []Candidate {
 		}
 		if m.QuietFor < MinQuietForSuspicious {
 			continue // it is working
+		}
+		// Measured: seven minutes after a restart, 43 processes were reported
+		// "idle for 6m45s" — the harness's own runtime. A quiet period longer
+		// than the observation window is a statement about the observer, not
+		// the process.
+		if f.ObservedFor > 0 && m.QuietFor > f.ObservedFor {
+			continue
 		}
 		if isProtected(m.Exe) {
 			continue // never name a process whose loss breaks the session

@@ -1135,6 +1135,22 @@ type MemberFact struct {
 	ParentGone  bool
 }
 
+// highestQualityWindowS is the longest run of samples this daemon has taken
+// without a coverage gap. A quiet period longer than that cannot be claimed:
+// we were not watching for all of it.
+func (a *Attributor) highestQualityWindowS() int64 {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.firstSnapAt.IsZero() || a.now.IsZero() {
+		return 0
+	}
+	return int64(a.now.Sub(a.firstSnapAt).Seconds())
+}
+
+// QuietBoundS reports the longest quiet period attribution can support with
+// evidence, so the relief engine can refuse claims beyond it.
+func (a *Attributor) QuietBoundS() int64 { return a.highestQualityWindowS() }
+
 // quietWitnessFrom returns the earliest moment attribution can honestly claim
 // to have watched this process without CPU use.
 func (a *Attributor) quietWitnessFrom(s *series) time.Time {
@@ -1144,12 +1160,16 @@ func (a *Attributor) quietWitnessFrom(s *series) time.Time {
 	if !arrival.IsZero() && !a.firstSnapAt.IsZero() && arrival.After(a.firstSnapAt) {
 		return arrival
 	}
-	// A process that was already running when the daemon started: the clock
-	// starts when we started watching.
-	if !a.firstSnapAt.IsZero() {
-		return a.firstSnapAt
-	}
-	return time.Time{}
+	// A process already running when the daemon started is NOT quiet for as
+	// long as the daemon has been up. Measured: seven minutes after a restart,
+	// the harness reported "no CPU for 6m45s" for 43 processes, which was
+	// "observed for 6m45s" wearing the costume of "silent for 6m45s". The
+	// default is the process's own start time, and the callers clamp it: the
+	// relief engine refuses to name a process whose start-time-derived quiet
+	// exceeds `highestQualityWindowS`, the longest run of samples with no
+	// coverage gap. That makes a claim rest on observation, not on a clock we
+	// did not start.
+	return s.id.Time()
 }
 
 // Members returns every live process with the facts the relief engine needs.
