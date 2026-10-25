@@ -936,3 +936,65 @@ func TestCoverageGapsDoNotChangeNetSize(t *testing.T) {
 			"or both", st.NetGrowthBytes>>20)
 	}
 }
+
+// Net growth is the group's change in total size, not the sum of its members'
+// per-tick deltas. Measured on the live machine: thirty-five node processes
+// wobbling a few MB each summed to 507 MB of "growth" over thirty minutes in
+// which the group total moved 9 MB — 56x overstated, and the source of an
+// advisory that repeated every window about a group that was perfectly flat.
+func TestGroupWobbleDoesNotAccumulate(t *testing.T) {
+	a := New(300)
+	base := time.Now()
+	for i := 0; i < 120; i++ {
+		at := base.Add(time.Duration(i) * 15 * time.Second)
+		procs := []model.ProcessSample{{Identity: model.ProcessIdentity{
+			Pid: 1, Ppid: 1, StartTime: t0, Executable: "launchd"},
+			FootprintBytes: 10 << 20, Quality: model.QualGood}}
+		for j := 0; j < 35; j++ {
+			mb := uint64(90)
+			if (i+j)%3 == 0 {
+				mb = 95 // each member wobbles independently
+			}
+			procs = append(procs, model.ProcessSample{Identity: model.ProcessIdentity{
+				Pid: int32(1000 + j), Ppid: 1, StartTime: t0, Executable: "node"},
+				FootprintBytes: mb << 20, Quality: model.QualGood})
+		}
+		a.Observe(model.ProcessSnapshot{At: at, Quality: model.QualGood,
+			Coverage:  model.Coverage{Attempted: len(procs), Succeeded: len(procs)},
+			Processes: procs}, sys(200000))
+	}
+	st := a.SeriesFor("node")
+	if st.NetGrowthBytes > 60<<20 || st.NetGrowthBytes < -60<<20 {
+		t.Errorf("net growth %d MB for a group whose total is steady: per-member "+
+			"wobble is being accumulated as growth", st.NetGrowthBytes>>20)
+	}
+}
+
+// A group whose total really does climb must still report it.
+func TestRealGroupGrowthIsReported(t *testing.T) {
+	a := New(300)
+	base := time.Now()
+	for i := 0; i < 40; i++ {
+		at := base.Add(time.Duration(i) * 15 * time.Second)
+		procs := []model.ProcessSample{{Identity: model.ProcessIdentity{
+			Pid: 1, Ppid: 1, StartTime: t0, Executable: "launchd"},
+			FootprintBytes: 10 << 20, Quality: model.QualGood}}
+		// 10 children, each holding 20 MB more than the tick before.
+		for j := 0; j < 10; j++ {
+			mb := uint64(100 + i*20)
+			procs = append(procs, model.ProcessSample{Identity: model.ProcessIdentity{
+				Pid: int32(2000 + j), Ppid: 1, StartTime: t0,
+				Executable: "probe-children"}, FootprintBytes: mb << 20,
+				Quality: model.QualGood})
+		}
+		a.Observe(model.ProcessSnapshot{At: at, Quality: model.QualGood,
+			Coverage:  model.Coverage{Attempted: len(procs), Succeeded: len(procs)},
+			Processes: procs}, sys(200000))
+	}
+	st := a.SeriesFor("probe-children")
+	// 10 members x 39 ticks x 20 MB = 7.8 GB of genuine growth.
+	if want := int64(7000 << 20); st.NetGrowthBytes < want {
+		t.Errorf("net growth %d MB, want >= %d MB: real growth is not reported",
+			st.NetGrowthBytes>>20, want>>20)
+	}
+}

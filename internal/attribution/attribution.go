@@ -138,9 +138,11 @@ type history struct {
 	lastActivity time.Time // last sample where any member burned CPU
 	growthBytes  int64     // total positive growth since firstSeen (gross)
 	releaseBytes int64     // total frees since firstSeen (gross)
-	// netGrowthBytes is the signed sum: what the group actually added. A group
-	// oscillating around a constant size has large gross figures and ~0 net.
+	// netGrowthBytes is what the group actually added: its total size now minus
+	// its total size when first seen. Recomputed, not accumulated — see the
+	// fold loop in Observe.
 	netGrowthBytes int64
+	sizeAtStart    int64
 	peakProcs      int // high-water process count
 	activeS        int64
 	quietS         int64
@@ -215,7 +217,6 @@ func (a *Attributor) Observe(snap model.ProcessSnapshot, sys model.SystemSample)
 			if back, ok := a.lastBytes[key]; ok && back > 0 {
 				if h := a.history[a.groupFor(id)]; h != nil {
 					h.releaseBytes -= back
-					h.netGrowthBytes += back
 				}
 				delete(a.lastBytes, key)
 			}
@@ -300,7 +301,6 @@ func (a *Attributor) Observe(snap model.ProcessSnapshot, sys model.SystemSample)
 			// releasing memory.
 			a.history[gid].releaseBytes += -d
 		}
-		a.history[gid].netGrowthBytes += d
 		a.history[gid].peakGrowthMB = maxInt64(a.history[gid].peakGrowthMB, d>>20)
 	}
 	// mark disappeared series ended (rule 2) — deltas stop accumulating
@@ -316,11 +316,14 @@ func (a *Attributor) Observe(snap model.ProcessSnapshot, sys model.SystemSample)
 			s.alive = true
 		}
 	}
-	// Process count per group this tick, for accumulation detection.
+	// Process count and total footprint per group this tick.
 	tickProcs := map[string]int{}
+	tickBytes := map[string]int64{}
 	for _, s := range a.series {
 		if s.alive {
-			tickProcs[a.groupFor(s.id)]++
+			gid := a.groupFor(s.id)
+			tickProcs[gid]++
+			tickBytes[gid] += s.prevBytes
 		}
 	}
 	// Fold this tick into each group's long-horizon record, once per tick.
@@ -347,6 +350,21 @@ func (a *Attributor) Observe(snap model.ProcessSnapshot, sys model.SystemSample)
 			h.peakProcs = n
 		} else if h.peakProcs > n {
 			h.peakProcs--
+		}
+		// Net growth is the group's change in total size, recomputed each tick
+		// rather than accumulated from per-member deltas.
+		//
+		// Summing deltas is only equal to the total's change when every member
+		// is visible in every sample. At 75% coverage it is not: thirty-five
+		// node processes wobbling a few MB each summed to 507 MB of "growth"
+		// over thirty minutes in which the whole group moved 9 MB — a 56x
+		// overstatement, and an advisory repeating every window about a group
+		// that was flat. Recomputing from the total is immune to that.
+		if tot, ok := tickBytes[gid]; ok && tot > 0 {
+			if h.sizeAtStart == 0 {
+				h.sizeAtStart = tot
+			}
+			h.netGrowthBytes = tot - h.sizeAtStart
 		}
 	}
 	a.retireGoneGroups(tickProcs, snap.At)
@@ -802,7 +820,6 @@ func (a *Attributor) sweepDeadSeries() {
 				// 2846 MB in 285 seconds while the group itself held a steady
 				// 4.3 GB. Release alone was not enough — net is a different
 				// accumulator and needed the mirror entry too.
-				h.netGrowthBytes -= s.prevBytes
 			}
 		}
 		delete(a.series, key)
