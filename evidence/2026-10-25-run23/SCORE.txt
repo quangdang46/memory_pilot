@@ -1,0 +1,13 @@
+probe           truth     expected                 verdict                  conf  at        result
+--------------------------------------------------------------------------------------------------
+probe-children  subprocesssubprocess_accumulation  subprocess_accumulation  0.60  20:32:25  OK
+probe-leak      leak      leak_suspicion           leak_suspicion           0.65  20:32:25  OK
+probe-plateau   cache     cache_or_retrievable     cache_or_retrievable     0.70  20:32:25  OK
+probe-sawtooth  cache     cache_or_retrievable     leak_suspicion           0.65  20:32:25  WRONG
+probe-workload  work      workload_growth          workload_growth          0.90  20:32:25  OK
+
+correct 4/5   wrong 1   silent 0   withheld 0
+
+verdicts that changed over the run:
+  probe-children: unknown(0.00) -> subprocess_accumulation(0.60) -> subprocess_accumulation(0.60) -> subprocess_accumulation(0.60) -> subprocess_accumulation(0.60) -> subprocess_accumulation(0.60)
+  probe-leak: unknown(0.00) -> leak_suspicion(0.65) -> leak_suspicion(0.65)
