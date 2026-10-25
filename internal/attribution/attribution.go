@@ -289,8 +289,20 @@ func (a *Attributor) Observe(snap model.ProcessSnapshot, sys model.SystemSample)
 		} else if grew {
 			h.quietS += dt
 		}
+		// peakProcs is a high-water mark over the recent past, not a permanent
+		// record. A group that spawned 38 processes once during a build and
+		// holds 1 now is not accumulating; with a lifetime maximum it would
+		// qualify as accumulation for the rest of the daemon's life. Measured:
+		// bash, 1 process on the machine, reported "process count reached 38"
+		// every window after a single busy moment.
+		//
+		// It decays one process per quiet tick instead of dropping outright, so
+		// a genuine accumulation — which keeps its children — stays at its
+		// high-water mark while a transient spike fades.
 		if n := tickProcs[gid]; n > h.peakProcs {
 			h.peakProcs = n
+		} else if h.peakProcs > n {
+			h.peakProcs--
 		}
 	}
 	a.retireGoneGroups(tickProcs, snap.At)

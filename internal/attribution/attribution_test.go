@@ -758,3 +758,66 @@ func TestGroupProcessCountIsWholeGroup(t *testing.T) {
 		t.Error("group appears both as a mover and as flat in one window")
 	}
 }
+
+// A high-water process count must be a recent peak, not a lifetime record. A
+// group that spawned 38 processes once during a build and holds 1 afterwards
+// is not accumulating; with a permanent maximum it qualifies as accumulation
+// for the rest of the daemon's life. Measured: bash, 1 process on the machine,
+// reported "process count reached 38" every window after one busy moment.
+func TestProcessPeakDecaysWhenGroupShrinks(t *testing.T) {
+	a := New(300)
+	base := time.Now()
+	snap := func(at time.Time, n int) model.ProcessSnapshot {
+		procs := []model.ProcessSample{{Identity: model.ProcessIdentity{
+			Pid: 1, Ppid: 0, StartTime: t0, Executable: "launchd"},
+			FootprintBytes: 10 << 20, Quality: model.QualGood}}
+		for i := 0; i < n; i++ {
+			procs = append(procs, model.ProcessSample{Identity: model.ProcessIdentity{
+				Pid: int32(100 + i), Ppid: 1, StartTime: t0,
+				Executable: "bash"}, FootprintBytes: 5 << 20, Quality: model.QualGood})
+		}
+		return model.ProcessSnapshot{At: at, Quality: model.QualGood,
+			Coverage:  model.Coverage{Attempted: len(procs), Succeeded: len(procs)},
+			Processes: procs}
+	}
+	// A busy moment: 30 bash processes.
+	a.Observe(snap(base, 30), sys(200000))
+	// Then it settles to 2 and stays there for a long while.
+	for i := 1; i <= 40; i++ {
+		a.Observe(snap(base.Add(time.Duration(i)*15*time.Second), 2), sys(200000))
+	}
+	st := a.SeriesFor("bash")
+	if st.PeakProcessCount > 8 {
+		t.Errorf("peak process count still %d after 10 minutes at 2 processes: "+
+			"a single busy moment qualifies the group as accumulation forever",
+			st.PeakProcessCount)
+	}
+}
+
+// Real accumulation keeps its children, so its peak must survive.
+func TestRealAccumulationKeepsItsPeak(t *testing.T) {
+	a := New(300)
+	base := time.Now()
+	snap := func(at time.Time, n int) model.ProcessSnapshot {
+		procs := []model.ProcessSample{{Identity: model.ProcessIdentity{
+			Pid: 1, Ppid: 0, StartTime: t0, Executable: "launchd"},
+			FootprintBytes: 10 << 20, Quality: model.QualGood}}
+		for i := 0; i < n; i++ {
+			procs = append(procs, model.ProcessSample{Identity: model.ProcessIdentity{
+				Pid: int32(100 + i), Ppid: 1, StartTime: t0,
+				Executable: "probe-children"}, FootprintBytes: 15 << 20,
+				Quality: model.QualGood})
+		}
+		return model.ProcessSnapshot{At: at, Quality: model.QualGood,
+			Coverage:  model.Coverage{Attempted: len(procs), Succeeded: len(procs)},
+			Processes: procs}
+	}
+	for i := 0; i <= 40; i++ {
+		a.Observe(snap(base.Add(time.Duration(i)*15*time.Second), 21), sys(200000))
+	}
+	st := a.SeriesFor("probe-children")
+	if st.PeakProcessCount < 21 || st.ProcessCount < 21 {
+		t.Errorf("21 held children: peak %d, count %d — accumulation lost its "+
+			"signature", st.PeakProcessCount, st.ProcessCount)
+	}
+}
