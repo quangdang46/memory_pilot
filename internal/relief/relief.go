@@ -66,6 +66,11 @@ const (
 	// MinReliefBytes: below this, closing something is a cleanup nicety, not a
 	// response to a shortfall.
 	MinReliefBytes = 100 << 20
+	// MaxNamed caps how many processes the sentence lists. The count and the
+	// total stay exact; the detail does not need to be a wall. Measured in the
+	// first live run: 39 candidates, each with two lines of evidence — a
+	// "recommendation" that is longer than the warning board it replaced.
+	MaxNamed = 8
 )
 
 // GroupFacts is what the engine is allowed to know about a group. Everything
@@ -336,10 +341,18 @@ func (r *Recommendation) Text() string {
 	}
 	relief := int64(0)
 	var abandoned []Candidate
-	for _, c := range r.Candidates {
+	for i, c := range r.Candidates {
 		if c.State == StateAbandoned {
 			relief += c.ExpectedReliefBytes
-			abandoned = append(abandoned, c)
+			if i < MaxNamed { // already ranked; the rest are counted, not listed
+				abandoned = append(abandoned, c)
+			}
+		}
+	}
+	named := 0
+	for _, c := range r.Candidates {
+		if c.State == StateAbandoned {
+			named++
 		}
 	}
 	if len(abandoned) == 0 {
@@ -350,12 +363,18 @@ func (r *Recommendation) Text() string {
 		total := int64(0)
 		s := fmt.Sprintf("%d process(es) are idle but not verified abandoned:\n",
 			len(r.Candidates))
-		for _, c := range r.Candidates {
+		for i, c := range r.Candidates {
 			total += c.ExpectedReliefBytes
+			if i >= MaxNamed {
+				continue
+			}
 			s += fmt.Sprintf("  %s (%d MB)\n", c.Group, c.FootprintMB())
 			for _, e := range c.Evidence {
 				s += fmt.Sprintf("      %s\n", e)
 			}
+		}
+		if len(r.Candidates) > MaxNamed {
+			s += fmt.Sprintf("  ... and %d more\n", len(r.Candidates)-MaxNamed)
 		}
 		s += fmt.Sprintf("closing all of them would return ~%d MB", total>>20)
 		if r.Shortfall > 0 {
@@ -370,9 +389,12 @@ func (r *Recommendation) Text() string {
 		return s
 	}
 	s := fmt.Sprintf("closing %d abandoned workload(s) would return ~%d MB",
-		len(abandoned), relief>>20)
+		named, relief>>20)
 	for _, c := range abandoned {
 		s += fmt.Sprintf("\n  %s: %d MB, quiet for a while, parent gone", c.Group, c.FootprintMB())
+	}
+	if named > len(abandoned) {
+		s += fmt.Sprintf("\n  ... and %d more", named-len(abandoned))
 	}
 	if r.Shortfall > 0 {
 		if r.Sufficient() {

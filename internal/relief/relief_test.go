@@ -352,3 +352,31 @@ func TestAdvisoryNeedsPressureOrACandidate(t *testing.T) {
 		t.Error("workload growth advised under pressure")
 	}
 }
+
+// A recommendation that lists everything is a warning board with extra
+// indentation. The count and total stay exact; the detail is capped.
+func TestRecommendationNamesOnlyTheFirstFew(t *testing.T) {
+	f := GroupFacts{Group: "x"}
+	for i := 0; i < 30; i++ {
+		f.Members = append(f.Members, Member{Pid: int32(i + 1), Exe: "worker",
+			Footprint: 200 << 20, QuietFor: 30 * time.Minute, ParentGone: true})
+	}
+	cs := AssessMembers(f)
+	Rank(cs)
+	r := &Recommendation{Severity: "Warn", Shortfall: 1 << 30, Candidates: cs}
+	for _, c := range cs {
+		if c.State == StateAbandoned {
+			r.TotalRelief += c.ExpectedReliefBytes
+		}
+	}
+	txt := r.Text()
+	if n := strings.Count(txt, "\n  worker (pid "); n != MaxNamed {
+		t.Errorf("named %d processes, want %d", n, MaxNamed)
+	}
+	if !strings.Contains(txt, "and 22 more") {
+		t.Errorf("the unnamed 22 are not accounted for:\n%s", txt)
+	}
+	if !strings.Contains(txt, "closing 30 abandoned") {
+		t.Errorf("the count was truncated with the list:\n%s", txt)
+	}
+}

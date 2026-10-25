@@ -71,12 +71,15 @@ interrupting anyone for.
 
 ## What is still NOT proven
 
-1. **Critical pressure.** Reached level 2, not 4. Reaching 4 on this machine
-   requires more memory than it could spare; deliberately hanging the host was
-   not an acceptable test cost. So the Critical-only paths — T1 self-relief
-   and L2 managed stop — have never executed on a live daemon. They are
-   covered by tests against real processes (the L2 test asserts the process
-   leaves the process table), not by field evidence.
+1. **Critical pressure.** Level 4 *was* reached — twice, at 22:59 on
+   2026-10-25, without anyone inducing it. The ledger count is 8099 Normal,
+   1093 Warn, 2 Critical. This document said "level 2, not 4" before that
+   count was taken; see `2026-10-26-what-mp-did-at-critical.md`. The field
+   evidence is worse for the product than the absence of it: at level 4 the
+   daemon emitted an advisory, trimmed its own buffers and rotated its own
+   log, while the compressor held 7.7 GB. L2 managed stop has still never
+   executed on a live daemon; it is covered by tests against real processes
+   (the L2 test asserts the process leaves the process table).
 2. **Thresholds are chosen, not fitted.** 1200 s evidence, 900 s plateau,
    256 MB accumulation, 8 processes. No false-positive corpus exists to fit
    them against. The spec requires one before promoting beyond canary.

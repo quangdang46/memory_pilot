@@ -18,10 +18,13 @@
 > terminate.
 >
 > Still unproven, and stated as such:
-> - **Critical pressure** was never reached on the target machine (level 2 of
->   4), so the Critical-only paths — T1 self-relief and L2 managed stop — have
->   never executed against a live daemon. They are covered by tests against
->   real processes instead.
+> - **Critical pressure was reached twice**, at 22:59 on 2026-10-25 — this
+>   README said otherwise until the ledger was counted
+>   (`evidence/2026-10-26-what-mp-did-at-critical.md`). What the daemon did
+>   there is the honest measure of v1: it emitted an advisory, trimmed its own
+>   buffers and rotated its own log, while 7.7 GB sat in the compressor. L2
+>   managed stop still has not executed against a live daemon; it is covered by
+>   tests against real processes only.
 > - **Thresholds are chosen, not fitted.** No false-positive corpus exists.
 > - **Long-run soak** (72 h) is still calendar-bound.
 >
