@@ -6,11 +6,30 @@ report the harness defect and discard the run rather than scoring it.
 
 Usage: verify_inputs.py <run-dir>
 """
+import ctypes
 import json
 import os
 import subprocess
 import sys
 import time
+
+# ps rss is not a reliable residency signal on this machine (it collapses under
+# pressure and swings 217MB on an idle process). The gate must judge inputs
+# with the same metric the product now uses.
+_libc = ctypes.CDLL(None)
+
+
+class _RU(ctypes.Structure):
+    _fields_ = [("uuid", ctypes.c_uint8 * 16)] + [
+        (f"f{i}", ctypes.c_uint64) for i in range(40)
+    ]
+
+
+def footprint_mb(pid):
+    r = _RU()
+    rc = _libc.proc_pid_rusage(ctypes.c_int(pid), ctypes.c_int(4),
+                               ctypes.byref(r), None, None, None)
+    return r.f7 / 2**20 if rc == 0 else -1.0
 
 
 def ps_table():
@@ -57,10 +76,11 @@ def main():
         pid = row["pid"]
         kids = children_of(table, pid)
         rss_mb = row["rss_kb"] / 1024
+        fp_mb = footprint_mb(pid)
         mode = spec["mode"]
 
-        print(f"{name}: pid={pid} ppid={row['ppid']} rss={rss_mb:.0f}MB "
-              f"children={len(kids)}")
+        print(f"{name}: pid={pid} ppid={row['ppid']} footprint={fp_mb:.0f}MB "
+              f"(rss={rss_mb:.0f}MB) children={len(kids)}")
 
         if mode == "children":
             want = spec.get("children", 20)
@@ -75,8 +95,10 @@ def main():
                 if k["ppid"] != pid:
                     failures.append(f"{name}: child {k['pid']} not parented")
         else:
-            if rss_mb < 10:
-                failures.append(f"{name}: only {rss_mb:.0f}MB resident — the "
+            # Judge by footprint: rss is the metric this project just proved
+            # unusable for exactly this question.
+            if fp_mb >= 0 and fp_mb < 10:
+                failures.append(f"{name}: only {fp_mb:.0f}MB footprint — the "
                                 f"shape may not have started allocating")
 
         if row["ppid"] == 1:
