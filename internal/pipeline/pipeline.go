@@ -204,6 +204,7 @@ func (p *Pipeline) CloseWindow(sys model.SystemSample) []classify.Verdict {
 			// count (explains growth that arrives as more processes).
 			GrowthBytes: st.GrowthBytes, ReleaseBytes: st.ReleaseBytes,
 			ProcessCount: st.ProcessCount, PeakProcessCount: st.PeakProcessCount,
+			LongGrowthBytes: st.LongGrowthBytes, LongPeakProcesses: st.LongPeakProcesses,
 		})
 		v.GrowthMB = g.GrowthBytes >> 20
 		verdicts = append(verdicts, v)

@@ -118,3 +118,37 @@ func TestRealAccumulationStillDetected(t *testing.T) {
 		t.Errorf("genuine accumulation missed: %s (%v)", v.Bucket, v.Basis)
 	}
 }
+
+// Horizon mismatch: a group that accumulated 288 MB over 25 minutes and freed
+// 130 MB of it must not be called a "cycling cache" because the current
+// 5-minute window happened to show no allocation. Comparing a window's growth
+// against a lifetime's release is not a comparison.
+func TestHorizonMismatchIsNotCycling(t *testing.T) {
+	v := Classify(SeriesStats{GroupKey: "probe-children", CoverageRatio: 1.0,
+		// This window: nothing allocated, 130 MB released.
+		GrowthBytes: 0, ReleaseBytes: 130 << 20,
+		// Lifetime: 288 MB accumulated, 130 MB released, 21 processes.
+		LongGrowthBytes: 288 << 20, LongPeakProcesses: 21,
+		ProcessCount: 21, PeakProcessCount: 21,
+		DurationS: 1800, QuietS: 1700, ActivityCorr: 0.0, SlopeBytesS: 100})
+	if v.Bucket == CacheOrRetrievable {
+		t.Errorf("accumulated 288 MB, released 130 MB — called a cycling cache: %v", v.Basis)
+	}
+	if v.Bucket != SubprocessAccumulation {
+		t.Errorf("21 processes holding 288 MB: got %s (%v), want subprocess_accumulation",
+			v.Bucket, v.Basis)
+	}
+}
+
+// A group that spawns children and then holds them grows nothing in the window
+// it is judged on, but it is still accumulation.
+func TestAccumulationWithoutWindowGrowth(t *testing.T) {
+	v := Classify(SeriesStats{GroupKey: "probe-children", CoverageRatio: 1.0,
+		GrowthBytes: 0, ReleaseBytes: 0,
+		LongGrowthBytes: 288 << 20, LongPeakProcesses: 21,
+		ProcessCount: 21, PeakProcessCount: 21,
+		DurationS: 1800, QuietS: 1700, ActivityCorr: 0.0, SlopeBytesS: 100})
+	if v.Bucket != SubprocessAccumulation {
+		t.Errorf("got %s (%v), want subprocess_accumulation", v.Bucket, v.Basis)
+	}
+}

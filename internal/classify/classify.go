@@ -62,6 +62,12 @@ type SeriesStats struct {
 	// PeakProcessCount is the high-water mark over the group's history, so a
 	// rising count is distinguishable from a static population.
 	PeakProcessCount int
+	// LongGrowthBytes covers the same horizon as ReleaseBytes. Comparing the
+	// window's growth with a lifetime's release is not a comparison: it read
+	// "released 130 MB while growing 0 MB" for a group that had accumulated
+	// 288 MB across many windows (run20, probe-children).
+	LongGrowthBytes   int64
+	LongPeakProcesses int
 }
 
 type Verdict struct {
@@ -100,12 +106,16 @@ func Classify(s SeriesStats) Verdict {
 	// growing 0 MB" — one megabyte of churn in twenty minutes is noise, and
 	// calling it a cache hides the process accumulation that was actually
 	// happening (run16, 11:50).
-	if s.ReleaseBytes >= MinCyclingBytes && s.GrowthBytes > 0 &&
-		s.ReleaseBytes >= s.GrowthBytes {
+	// Both sides on the same horizon: lifetime release vs lifetime growth.
+	cLongGrow, cRel := s.LongGrowthBytes, s.ReleaseBytes
+	if cLongGrow == 0 {
+		cLongGrow = s.GrowthBytes // no long-horizon record yet
+	}
+	if cRel >= MinCyclingBytes && cLongGrow > 0 && cRel >= cLongGrow {
 		v.Bucket = CacheOrRetrievable
 		v.Basis = append(v.Basis,
 			fmt.Sprintf("released %d MB while growing %d MB — cycling, not accumulating",
-				s.ReleaseBytes>>20, s.GrowthBytes>>20))
+				cRel>>20, cLongGrow>>20))
 		v.Confidence = 0.8
 		v.Alternatives = append(v.Alternatives, WorkloadGrowth)
 		return v
@@ -118,12 +128,24 @@ func Classify(s SeriesStats) Verdict {
 	// job, not accumulation. Measured after a first attempt fired on zsh
 	// (0 MB), Chrome (12 MB) and node (110 MB) in one window: the bucket was
 	// answering "does this app have many processes", which is always yes.
-	if s.PeakProcessCount >= MinProcessGrowth && s.ProcessCount > 0 &&
-		s.GrowthBytes >= MinAccumulationBytes && s.ActivityCorr < MinCorrelation {
+	// Growth measured over the group's whole life, not the current window: a
+	// shape that spawned 20 children and then held them grows nothing in the
+	// window it is judged on, and would be invisible if only that window
+	// counted. Measured in run20: probe-children held 288 MB across 21
+	// processes and reported growth 0 MB, so this branch could not fire.
+	accGrow, accPeak := s.LongGrowthBytes, s.PeakProcessCount
+	if accGrow == 0 {
+		accGrow = s.GrowthBytes
+	}
+	if accPeak < s.LongPeakProcesses {
+		accPeak = s.LongPeakProcesses
+	}
+	if accPeak >= MinProcessGrowth && s.ProcessCount > 0 &&
+		accGrow >= MinAccumulationBytes && s.ActivityCorr < MinCorrelation {
 		v.Bucket = SubprocessAccumulation
 		v.Basis = append(v.Basis,
 			fmt.Sprintf("process count reached %d (high-water) with growth not correlated to activity (corr %.2f)",
-				s.PeakProcessCount, s.ActivityCorr))
+				accPeak, s.ActivityCorr))
 		v.Confidence = 0.6
 		v.Alternatives = append(v.Alternatives, WorkloadGrowth, LeakSuspicion)
 		return v

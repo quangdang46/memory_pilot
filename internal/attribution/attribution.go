@@ -510,6 +510,14 @@ func (a *Attributor) seriesForLocked(anchor string) SeriesStats {
 			st.SlopeBytesS = float64(h.growthBytes) / span
 			st.ReleaseBytes = h.releaseBytes
 		}
+		// LongGrowthBytes is the same long horizon as ReleaseBytes. They must
+		// be compared with each other: ReleaseBytes accumulates across windows
+		// while GrowthBytes covers only the last one, so "released 130 MB while
+		// growing 0 MB" compared 25 minutes of frees against 5 minutes of
+		// allocation and called a group that had accumulated 288 MB a cycling
+		// cache (run20, probe-children).
+		st.LongGrowthBytes = h.growthBytes
+		st.LongPeakProcesses = h.peakProcs
 		if h.lastGrowth.After(h.lastActivity) && !h.lastActivity.IsZero() {
 			st.QuietS = int64(a.now.Sub(h.lastActivity).Seconds())
 		} else if h.lastActivity.IsZero() {
@@ -577,6 +585,11 @@ type SeriesStats struct {
 
 	GrowthBytes      int64
 	ReleaseBytes     int64
+	// LongGrowthBytes and LongPeakProcesses cover the same horizon as
+	// ReleaseBytes: the whole time the group has been watched. Comparing a
+	// window's growth against a lifetime's release is not a comparison.
+	LongGrowthBytes  int64
+	LongPeakProcesses int
 	ProcessCount     int
 	PeakProcessCount int
 }
