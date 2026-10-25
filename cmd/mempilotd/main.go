@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"memory_pilot/internal/attribution"
 	"memory_pilot/internal/classify"
 	"memory_pilot/internal/clock"
 	"memory_pilot/internal/config"
@@ -319,6 +320,14 @@ func (h *daemonHandler) recordVerdicts(s model.SystemSample, vs []classify.Verdi
 		// how a warning list becomes noise the user stops reading. Those
 		// verdicts stay in the ledger and in `report` - they are just not
 		// warnings.
+		// A terminal's children are the work the user started, not something
+		// the application spawned for itself. "wezterm-gui is accumulating
+		// subprocesses" describes every terminal on every machine; measured
+		// here at 86 descendants and 8 GB, all of it the owner's own editors,
+		// agents and builds. The group is still measured and still reported.
+		if attribution.IsTerminalGroup(v.GroupKey) {
+			continue
+		}
 		switch v.Bucket {
 		case classify.LeakSuspicion, classify.SubprocessAccumulation:
 			// worth surfacing

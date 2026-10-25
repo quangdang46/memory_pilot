@@ -693,6 +693,24 @@ var AnchorTable = []string{
 	"claude", "mempilotd",
 }
 
+// TerminalAnchors are the anchors whose children are whatever the user chose to
+// run, not what the application spawned for itself. A terminal with 86
+// descendants and 8 GB under it is a normal working machine, not accumulation:
+// measured here, wezterm-gui held exactly that, and the subprocess advisory it
+// produced named the user's own session back at them.
+//
+// These groups are still counted, still ranked and still appear in `report`.
+// They simply never become advisories, because the advisory would be telling
+// the user about the work they started.
+var TerminalAnchors = map[string]bool{
+	"Terminal": true, "iTerm2": true, "wezterm-gui": true, "Alacritty": true,
+	"kitty": true, "tmux": true, "sshd": true,
+}
+
+// IsTerminalGroup reports whether a group anchor is a terminal or shell
+// session rather than an application.
+func IsTerminalGroup(anchor string) bool { return TerminalAnchors[anchor] }
+
 func maxInt64(a, b int64) int64 {
 	if a > b {
 		return a

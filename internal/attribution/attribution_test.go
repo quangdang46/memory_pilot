@@ -821,3 +821,22 @@ func TestRealAccumulationKeepsItsPeak(t *testing.T) {
 			"signature", st.PeakProcessCount, st.ProcessCount)
 	}
 }
+
+// A terminal's children are what the user chose to run. Measured on this
+// machine: wezterm-gui had 86 descendants holding 8.4 GB — editors, agents and
+// builds the owner started by hand. Calling that "accumulating subprocesses"
+// tells the user about their own work.
+func TestTerminalAnchorsAreRecognised(t *testing.T) {
+	for _, name := range []string{"wezterm-gui", "Terminal", "iTerm2", "tmux", "sshd"} {
+		if !IsTerminalGroup(name) {
+			t.Errorf("%q is a terminal but IsTerminalGroup says no — its "+
+				"subprocess advisory will still fire", name)
+		}
+	}
+	// Applications must not be swallowed by the exemption.
+	for _, name := range []string{"node", "Google Chrome", "Docker", "probe-children", "claude"} {
+		if IsTerminalGroup(name) {
+			t.Errorf("%q is not a terminal but was exempted from advisories", name)
+		}
+	}
+}
