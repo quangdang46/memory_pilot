@@ -119,12 +119,19 @@ func report(args []string) {
 	}
 	var recs []map[string]any
 	json.Unmarshal(raw, &recs)
+	// Records arrive newest first. "Latest" therefore means the FIRST match,
+	// not the last: overwriting kept the oldest attribution window in the
+	// response, so `report` showed a window from before the last restart while
+	// the ledger had newer ones. Observed: the CLI reported an 11:45 window
+	// with 914 MB in wezterm-gui while the daemon was writing 12:16 windows.
 	var latestAttr, latestVerdict map[string]any
 	var advisories []map[string]any
 	for _, r := range recs {
 		switch r["kind"] {
 		case "attribution":
-			latestAttr = r
+			if latestAttr == nil {
+				latestAttr = r
+			}
 		case "classification":
 			if latestVerdict == nil {
 				latestVerdict = r
