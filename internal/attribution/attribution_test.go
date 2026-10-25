@@ -998,3 +998,35 @@ func TestRealGroupGrowthIsReported(t *testing.T) {
 			st.NetGrowthBytes>>20, want>>20)
 	}
 }
+
+// The baseline must follow the group's living population, not the sum of
+// everything that ever existed in it. A baseline that never shrinks reads a
+// group losing a member as negative growth. Measured on node: -1124 MB while
+// the group held a steady 3.19 GB.
+func TestMembersLeavingBaselineAreNotNegativeGrowth(t *testing.T) {
+	a := New(300)
+	base := time.Now()
+	for i := 0; i < 60; i++ {
+		at := base.Add(time.Duration(i) * 15 * time.Second)
+		procs := []model.ProcessSample{{Identity: model.ProcessIdentity{
+			Pid: 1, Ppid: 1, StartTime: t0, Executable: "launchd"},
+			FootprintBytes: 10 << 20, Quality: model.QualGood}}
+		for j := 0; j < 40; j++ {
+			if i > 30 && j < 5 {
+				continue // five members exit for good
+			}
+			procs = append(procs, model.ProcessSample{Identity: model.ProcessIdentity{
+				Pid: int32(7000 + j), Ppid: 1, StartTime: t0, Executable: "node"},
+				FootprintBytes: 80 << 20, Quality: model.QualGood})
+		}
+		a.Observe(model.ProcessSnapshot{At: at, Quality: model.QualGood,
+			Coverage:  model.Coverage{Attempted: 41, Succeeded: len(procs)},
+			Processes: procs}, sys(200000))
+	}
+	st := a.SeriesFor("node")
+	if st.NetGrowthBytes < -50<<20 {
+		t.Errorf("net %d MB after five of forty members exited: the baseline "+
+			"kept the departed members, so losing them reads as shrinkage",
+			st.NetGrowthBytes>>20)
+	}
+}

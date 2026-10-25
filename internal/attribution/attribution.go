@@ -39,6 +39,9 @@ type series struct {
 	// swept it is absent from the snapshot, so walking the parent chain can no
 	// longer find its ancestry.
 	group string
+	// baselineContribution is what this member added to its group's starting
+	// size, so it can be removed again when the member exits.
+	baselineContribution int64
 
 	// Activity correlation counters (MP-ALG-005): a group that grows while
 	// its processes burn CPU is doing work; a group that grows while they sit
@@ -228,11 +231,17 @@ func (a *Attributor) Observe(snap model.ProcessSnapshot, sys model.SystemSample)
 			// member, which a snapshot of the first total could not do: node's
 			// first window saw a fraction of its processes and every later one
 			// looked like +293 MB of growth.
-			firstEver := !a.seenIdentities[key]
-			a.seenIdentities[key] = true
+			// A member joins the baseline when first seen and leaves it when it
+			// dies, so the baseline tracks the group's real starting population
+			// rather than a lifetime sum of everything that ever existed. A sum
+			// that never shrinks reads a group losing a member as negative
+			// growth — measured on node, which reported -1124 MB while holding a
+			// steady 3.19 GB.
 			wasHere := a.firstSnapAt.IsZero() ||
 				!time.Unix(id.StartSec, id.StartUsec*1000).After(a.firstSnapAt)
-			if firstEver && wasHere {
+			s.baselineContribution = 0
+			if wasHere {
+				s.baselineContribution = now
 				a.ensureHistory(snap.At, a.groupFor(id)).sizeAtStart += now
 			}
 		}
@@ -834,6 +843,12 @@ func (a *Attributor) sweepDeadSeries() {
 		// window purely from short-lived children coming and going.
 		if s.prevBytes > 0 {
 			a.lastBytes[key] = s.prevBytes
+			// The member leaves the baseline as it leaves the group.
+			if s.baselineContribution > 0 {
+				if h := a.history[s.group]; h != nil {
+					h.sizeAtStart -= s.baselineContribution
+				}
+			}
 			if h := a.history[s.group]; h != nil {
 				h.releaseBytes += s.prevBytes
 				// ...and the same amount leaves the group's net size. Adding an
