@@ -206,14 +206,15 @@ func (p *Pipeline) CloseWindow(sys model.SystemSample) []classify.Verdict {
 			ProcessCount: st.ProcessCount, PeakProcessCount: st.PeakProcessCount,
 			LongGrowthBytes: st.LongGrowthBytes, LongPeakProcesses: st.LongPeakProcesses,
 		})
-		v.GrowthMB = g.GrowthBytes >> 20
+		decidedMB := decidedGrowthMB(v.Bucket, st.GrowthBytes, st.LongGrowthBytes)
+		v.GrowthMB = decidedMB
 		verdicts = append(verdicts, v)
 		if p.Ledger != nil {
 			_ = p.Ledger.Append(map[string]any{
 				"kind": "classification", "at": sys.At, "group": v.GroupKey,
 				"bucket": v.Bucket, "confidence": v.Confidence,
 				"basis": v.Basis, "alternatives": v.Alternatives,
-				"growth_mb": g.GrowthBytes >> 20, "processes": g.Processes,
+				"growth_mb": decidedMB, "processes": g.Processes,
 				// The inputs behind the verdict, so a reader can check the
 				// reasoning instead of taking the sentence on faith.
 				"signals": map[string]any{
@@ -422,6 +423,21 @@ func (p *Pipeline) attrStats(anchor string) attribution.SeriesStats {
 		return st
 	}
 	return p.Attr.SeriesFor(anchor)
+}
+
+// decidedGrowthMB is the number a verdict's sentence may quote: the growth
+// measured over the horizon that decided it. Accumulation and suspicion read
+// lifetime growth, so quoting the current window produced "grew by 0 MB —
+// unexplained sustained growth" (observed at 14:36 on 2.1.310, whose own basis
+// said 409 MB). Workload and cache are window judgements and keep the window.
+func decidedGrowthMB(b classify.Bucket, windowBytes, longBytes int64) int64 {
+	switch b {
+	case classify.SubprocessAccumulation, classify.LeakSuspicion:
+		if longBytes > 0 {
+			return longBytes >> 20
+		}
+	}
+	return windowBytes >> 20
 }
 
 func (p *Pipeline) candidates(w attribution.Window) []candidate {

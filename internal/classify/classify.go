@@ -269,6 +269,11 @@ func RenderVerdict(v Verdict, growthMB int64) string {
 		LeakSuspicion:          "unexplained sustained growth (suspicion)",
 		Unknown:                "insufficient evidence to classify",
 	}[v.Bucket]
+	// The sentence must not contradict itself. A verdict reached on lifetime
+	// growth, printed against the current window's zero, read
+	// "group 2.1.310 grew by 0 MB — unexplained sustained growth", which is
+	// both confusing and a reason to distrust the tool. GrowthMB carries
+	// whichever horizon decided the verdict (see Verdict.GrowthMB).
 	return fmt.Sprintf("group %s grew by %d MB — %s (confidence %.2f; basis: %v)",
 		v.GroupKey, growthMB, label, v.Confidence, v.Basis)
 }

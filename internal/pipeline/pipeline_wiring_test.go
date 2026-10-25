@@ -455,3 +455,33 @@ func TestVerdictSeesTheClosedWindow(t *testing.T) {
 		t.Errorf("signals growth_bytes=%v: classifier saw a reset window", gb)
 	}
 }
+
+// The sentence must quote the number the verdict was decided on. Observed live
+// at 14:36: "group 2.1.310 grew by 0 MB — unexplained sustained growth
+// (suspicion)". The verdict was reached on lifetime growth (409 MB recorded in
+// its own basis) while the sentence quoted a flat window.
+//
+// Asserted directly against the mapping, because constructing a live sequence
+// that reaches leak_suspicion with a zero final window takes 30 simulated
+// minutes and the mapping is what was wrong.
+func TestDecidedGrowthUsesTheDecidingHorizon(t *testing.T) {
+	cases := []struct {
+		bucket    classify.Bucket
+		win, long int64
+		wantMB    int64
+		reason    string
+	}{
+		{classify.LeakSuspicion, 0, 409 << 20, 409, "suspicion decides on lifetime growth"},
+		{classify.SubprocessAccumulation, 0, 288 << 20, 288, "accumulation decides on lifetime growth"},
+		{classify.WorkloadGrowth, 150 << 20, 900 << 20, 150, "workload is a window judgement"},
+		{classify.CacheOrRetrievable, 0, 900 << 20, 0, "cache is a window judgement"},
+		{classify.LeakSuspicion, 0, 0, 0, "no lifetime record yet: fall back to the window"},
+	}
+	for _, c := range cases {
+		got := decidedGrowthMB(c.bucket, c.win, c.long)
+		if got != c.wantMB {
+			t.Errorf("%s: bucket %s win=%dMB long=%dMB → %dMB, want %dMB",
+				c.reason, c.bucket, c.win>>20, c.long>>20, got, c.wantMB)
+		}
+	}
+}
