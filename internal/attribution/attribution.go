@@ -109,6 +109,7 @@ type Attributor struct {
 // from erasing evidence of what happened before it.
 type history struct {
 	firstSeen    time.Time
+	lastSeen     time.Time // last sample where the group had a live member
 	lastGrowth   time.Time // last sample where the group grew
 	lastActivity time.Time // last sample where any member burned CPU
 	growthBytes  int64     // total positive growth since firstSeen
@@ -195,6 +196,7 @@ func (a *Attributor) Observe(snap model.ProcessSnapshot, sys model.SystemSample)
 		if a.history[gid] == nil {
 			a.history[gid] = &history{firstSeen: snap.At}
 		}
+		a.history[gid].lastSeen = snap.At
 		if d > 0 {
 			a.history[gid].lastGrowth = snap.At
 		}
@@ -253,6 +255,7 @@ func (a *Attributor) Observe(snap model.ProcessSnapshot, sys model.SystemSample)
 			h.peakProcs = n
 		}
 	}
+	a.retireGoneGroups(tickProcs, snap.At)
 	// Retire dead series. These maps are keyed by (pid, start time), so they
 	// grow with every process the machine ever starts: builds, shells, helper
 	// XPC services. Without this the daemon leaked a few hundred bytes per
@@ -658,6 +661,39 @@ func (a *Attributor) sweepDeadSeries() {
 		sort.Slice(all, func(i, j int) bool { return all[i].at.After(all[j].at) })
 		for _, e := range all[maxRetiredSeries:] {
 			delete(a.history, e.gid)
+		}
+	}
+}
+
+// goneGraceS is how long a group's history survives after its last live
+// member was seen. It must exceed a plausible sampler stall so a momentary
+// visibility gap does not erase real evidence, and it must be short enough that
+// a new group never inherits an old one's window.
+const goneGraceS = 120
+
+// retireGoneGroups drops the long-horizon record of a group with no live
+// members. History is keyed by anchor *name*, which is not unique in time:
+// probes, browsers and shells all reuse names across sessions. Observed live
+// in run15 — a group that started at 11:40 reported DurationS=884s at 11:45
+// because a run12 group of the same name had been recorded an hour earlier and
+// nothing retired it. DurationS gates the leak branch, so an inherited window
+// lets a brand-new process be called a leak on its first appearance: exactly
+// the warning the owner asked never to see again.
+func (a *Attributor) retireGoneGroups(alive map[string]int, now time.Time) {
+	if len(a.history) == 0 {
+		return
+	}
+	for gid, h := range a.history {
+		if alive[gid] > 0 {
+			h.lastSeen = now
+			continue
+		}
+		ref := h.lastSeen
+		if ref.IsZero() {
+			ref = h.firstSeen
+		}
+		if now.Sub(ref) >= goneGraceS*time.Second {
+			delete(a.history, gid)
 		}
 	}
 }

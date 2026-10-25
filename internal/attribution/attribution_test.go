@@ -525,3 +525,56 @@ func TestConcurrentObserveAndWindow(t *testing.T) {
 	}
 	<-done
 }
+
+// A group's long-horizon record must not outlive the group. Observed live:
+// probes grouped under "probe-leak" in run15 (which began at 11:40) reported
+// DurationS=884s at 11:45 — 578s more than they had existed — because a run12
+// group with the same name had been recorded an hour earlier and its history
+// was never retired. DurationS gates the leak branch (classify.go:145), so a
+// freshly started group inherits the old one's evidence and can be called a
+// leak without a single second of its own observation.
+func TestHistoryRetiredWhenGroupDisappears(t *testing.T) {
+	a := New(60)
+	base := time.Now().Add(-2 * time.Hour)
+	mk := func(at time.Time, pid int32, start time.Time, mb uint64) model.ProcessSnapshot {
+		return model.ProcessSnapshot{At: at, Quality: model.QualGood,
+			Coverage: model.Coverage{Attempted: 1, Succeeded: 1},
+			Processes: []model.ProcessSample{{Identity: model.ProcessIdentity{
+				Pid: pid, Ppid: 1, StartTime: start, Executable: "probe-leak"},
+				FootprintBytes: mb << 20, Quality: model.QualGood}}}
+	}
+	// An old incarnation: observed for 30 minutes, then gone for a long while.
+	for i := 0; i < 120; i++ {
+		at := base.Add(time.Duration(i) * 15 * time.Second)
+		a.Observe(mk(at, 100, t0, 100), sys(200000))
+		a.CloseWindowAndReset(model.SystemSample{At: at, PageBytes: 16384,
+			FreePages: 200000, MachStatsQuality: model.QualGood,
+			KernelLevelQuality: model.QualGood})
+	}
+	if a.history["probe-leak"] == nil {
+		t.Fatal("old incarnation left no history — test cannot reproduce the defect")
+	}
+	// Nothing of that group is running any more, for longer than the evidence
+	// threshold, so the group is unambiguously gone rather than briefly hidden.
+	gone := base.Add(30 * time.Minute)
+	for i := 0; i < 40; i++ {
+		at := gone.Add(time.Duration(i) * 15 * time.Second)
+		a.Observe(model.ProcessSnapshot{At: at, Quality: model.QualGood,
+			Coverage: model.Coverage{Attempted: 1, Succeeded: 1}}, sys(200000))
+	}
+	// A brand-new process with the same executable name starts now.
+	fresh := gone.Add(10 * time.Minute)
+	for i := 0; i < 8; i++ {
+		at := fresh.Add(time.Duration(i) * 15 * time.Second)
+		a.Observe(mk(at, 200, fresh, 100), sys(200000))
+	}
+	h := a.history["probe-leak"]
+	if h == nil {
+		t.Fatal("new group has no history")
+	}
+	if h.firstSeen.Before(fresh) {
+		t.Errorf("history survived the group: firstSeen %v is before the new "+
+			"process started %v — a new group would inherit the old group's "+
+			"evidence window", h.firstSeen, fresh)
+	}
+}
