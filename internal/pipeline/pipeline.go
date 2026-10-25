@@ -403,6 +403,19 @@ type candidate struct {
 //
 // A group selected by any of these is classified once; the reason is recorded
 // in the verdict's basis so a reader can see why it was examined.
+// attrStats prefers the stats captured when the window closed. SeriesFor reads
+// the live counters, which CloseWindowAndReset has already zeroed by the time
+// the window is classified — so a group that grew 98 MB in the window it was
+// judged on would present GrowthBytes=0, SlopeBytesS=0, and no branch that
+// depends on growth could fire. Falls back for callers outside window close
+// (tests, status queries between windows).
+func (p *Pipeline) attrStats(anchor string) attribution.SeriesStats {
+	if st, ok := p.Attr.WindowStats(anchor); ok {
+		return st
+	}
+	return p.Attr.SeriesFor(anchor)
+}
+
 func (p *Pipeline) candidates(w attribution.Window) []candidate {
 	seen := map[string]candidate{}
 	add := func(g attribution.Group, why string) {
@@ -425,7 +438,7 @@ func (p *Pipeline) candidates(w attribution.Window) []candidate {
 	// never be corrected to "cache". These come from Window.Flat, which
 	// deliberately keeps them out of the growth ranking.
 	for _, g := range w.Flat {
-		st := p.Attr.SeriesFor(g.AnchorKey)
+		st := p.attrStats(g.AnchorKey)
 		if st.DurationS > 0 {
 			addWithStats(&seen, g, st, "re-judge")
 		}
@@ -433,7 +446,7 @@ func (p *Pipeline) candidates(w attribution.Window) []candidate {
 
 	// 2 & 3. endurance and shape, over every group in the window.
 	for _, g := range w.Groups {
-		st := p.Attr.SeriesFor(g.AnchorKey)
+		st := p.attrStats(g.AnchorKey)
 		// endurance: growth that has continued for a long time at a rate
 		// worth caring about. MinSustainedBps is deliberately low: the point
 		// is to catch the group nobody notices, not the loud one.
@@ -454,7 +467,7 @@ func (p *Pipeline) candidates(w attribution.Window) []candidate {
 	out := make([]candidate, 0, len(seen))
 	for _, c := range seen {
 		if c.stats.GroupKey == "" {
-			c.stats = p.Attr.SeriesFor(c.group.AnchorKey)
+			c.stats = p.attrStats(c.group.AnchorKey)
 		}
 		out = append(out, c)
 	}

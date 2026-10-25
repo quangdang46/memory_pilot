@@ -108,7 +108,12 @@ type Attributor struct {
 	// the daemon was honest but useless. History accumulates across windows
 	// and resets only when the group itself resets (see Reset).
 	history map[string]*history
-	now     time.Time
+	// windowStats holds each group's series stats as of the moment the window
+	// closed. The pipeline must classify the window that just ended, but
+	// closing it resets every counter — so the numbers have to be captured
+	// first.
+	windowStats map[string]SeriesStats
+	now         time.Time
 }
 
 // history spans multiple report windows. Buckets keep the window boundary
@@ -783,6 +788,25 @@ func (a *Attributor) CloseWindowAndReset(sysNow model.SystemSample) Window {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	w := a.windowLocked(sysNow)
+	// Snapshot the per-group series stats for the window that just closed,
+	// BEFORE resetting. The pipeline classifies the window it closed; reading
+	// SeriesFor afterwards returns the next window's counters, which are all
+	// zero — so the classifier saw GrowthBytes=0 and SlopeBytesS=0 while the
+	// window-recorded growth said 98 MB, and the plateau/accumulation branches
+	// were unreachable for any group whose growth happened in a different
+	// window than the read.
+	a.windowStats = map[string]SeriesStats{}
+	for gid := range a.history {
+		a.windowStats[gid] = a.seriesForLocked(gid)
+	}
 	a.resetLocked()
 	return w
+}
+
+// WindowStats returns the per-group stats captured when the window closed.
+func (a *Attributor) WindowStats(anchor string) (SeriesStats, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	st, ok := a.windowStats[anchor]
+	return st, ok
 }

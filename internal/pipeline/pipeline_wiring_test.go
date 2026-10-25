@@ -415,3 +415,43 @@ func TestPlateauedGroupIsReJudged(t *testing.T) {
 		t.Fatal("plateaued group never re-judged — a stale leak verdict can never be corrected")
 	}
 }
+
+// The window that is judged must be the window that closed. Closing resets
+// every counter, and the classifier runs after the close — so reading the live
+// series gave it GrowthBytes=0 and SlopeBytesS=0 for a group that had just
+// grown 98 MB, and no growth-dependent branch could fire. Measured in run18:
+// probe-plateau, flat for 907 s (past the 900 s plateau threshold), was
+// classified leak_suspicion; probe-children and probe-sawtooth likewise.
+func TestVerdictSeesTheClosedWindow(t *testing.T) {
+	lg := &recordingLedger{}
+	p := newTestPipeline(t, policy.ModeObserve, lg)
+	t0 := time.Now().Add(-5 * time.Minute)
+
+	// A group that grows hard all window and is then judged on it.
+	for i := 0; i < 20; i++ {
+		at := t0.Add(time.Duration(i) * 15 * time.Second)
+		snap := mkSnap(at, [][4]any{
+			{int32(700), int32(1), "probe-leak", int64(100+i*8) << 20},
+		})
+		p.ObserveProcesses(snap, sysSample(at, 200000))
+	}
+	p.CloseWindow(sysSample(t0.Add(5*time.Minute), 180000))
+
+	cls := lg.find("classification")
+	if cls == nil {
+		t.Fatal("no classification written")
+	}
+	growth, _ := cls["growth_mb"].(float64)
+	if growth <= 0 {
+		t.Errorf("verdict reports growth_mb=%v for a group that grew every "+
+			"tick of the window — the classifier read the counters after they "+
+			"were reset (signals: %v)", growth, cls["signals"])
+	}
+	sig, _ := cls["signals"].(map[string]any)
+	if sig == nil {
+		t.Fatal("no signals recorded — the verdict cannot be checked")
+	}
+	if gb, _ := sig["growth_bytes"].(float64); gb <= 0 {
+		t.Errorf("signals growth_bytes=%v: classifier saw a reset window", gb)
+	}
+}
