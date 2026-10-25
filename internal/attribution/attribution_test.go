@@ -840,3 +840,50 @@ func TestTerminalAnchorsAreRecognised(t *testing.T) {
 		}
 	}
 }
+
+// Spawning and reaping helpers must leave net size unchanged. Observed live:
+// node spawned ~220 MB helpers per session and reaped them, and net grew by
+// 2846 MB in 285 seconds while the group held a steady 4.3 GB. Arrivals added
+// to net; departures only added to release. That is defect 13 one layer up.
+func TestChurnDoesNotInflateNetSize(t *testing.T) {
+	a := New(300)
+	base := time.Now()
+	parent := model.ProcessSample{Identity: model.ProcessIdentity{
+		Pid: 5000, Ppid: 1, StartTime: t0, Executable: "node"},
+		FootprintBytes: 1000 << 20, Quality: model.QualGood}
+
+	// Twenty short-lived 200 MB helpers come and go under the parent.
+	var held []int32
+	for i := 0; i < 80; i++ {
+		at := base.Add(time.Duration(i) * 15 * time.Second)
+		procs := []model.ProcessSample{parent}
+		// Spawn one, reap one, keeping the population steady.
+		if i%2 == 0 {
+			pid := int32(6000 + i)
+			held = append(held, pid)
+			procs = append(procs, model.ProcessSample{Identity: model.ProcessIdentity{
+				Pid: pid, Ppid: 5000, StartTime: at, Executable: "node"},
+				FootprintBytes: 200 << 20, Quality: model.QualGood})
+		} else if len(held) > 0 {
+			held = held[:len(held)-1] // this one is absent from the snapshot
+		}
+		for _, pid := range held {
+			if i%2 == 0 && pid == held[len(held)-1] {
+				continue // already added above
+			}
+			procs = append(procs, model.ProcessSample{Identity: model.ProcessIdentity{
+				Pid: pid, Ppid: 5000, StartTime: base, Executable: "node"},
+				FootprintBytes: 200 << 20, Quality: model.QualGood})
+		}
+		a.Observe(model.ProcessSnapshot{At: at, Quality: model.QualGood,
+			Coverage:  model.Coverage{Attempted: len(procs), Succeeded: len(procs)},
+			Processes: procs}, sys(200000))
+	}
+	st := a.SeriesFor("node")
+	// The group held roughly 1 GB plus a couple of helpers throughout.
+	if st.NetGrowthBytes > 1500<<20 {
+		t.Errorf("net growth %d MB after 20 minutes of steady churn around "+
+			"~1.2 GB — arrivals are counted but departures are not",
+			st.NetGrowthBytes>>20)
+	}
+}

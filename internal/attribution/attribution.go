@@ -764,6 +764,14 @@ func (a *Attributor) sweepDeadSeries() {
 		if s.prevBytes > 0 {
 			if h := a.history[s.group]; h != nil {
 				h.releaseBytes += s.prevBytes
+				// ...and the same amount leaves the group's net size. Adding an
+				// arrival to net without subtracting the departure is the same
+				// one-way accounting as defect 13, one layer up: node spawns a
+				// ~220 MB helper per session and reaps it, and net grew by
+				// 2846 MB in 285 seconds while the group itself held a steady
+				// 4.3 GB. Release alone was not enough — net is a different
+				// accumulator and needed the mirror entry too.
+				h.netGrowthBytes -= s.prevBytes
 			}
 		}
 		delete(a.series, key)
