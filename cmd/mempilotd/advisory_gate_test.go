@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"memory_pilot/internal/classify"
 	"memory_pilot/internal/ledger"
@@ -64,13 +65,33 @@ func TestTerminalGroupsProduceNoAdvisory(t *testing.T) {
 	}
 }
 
-// A real application with the same shape must still be surfaced.
-func TestApplicationStillAdvised(t *testing.T) {
+// Growth without anything releasable is no longer announced. Measured before
+// this rule: 98 advisories in 45 minutes at Normal pressure, most naming groups
+// that were working. The verdict still reaches the ledger and `report`.
+func TestGrowthAloneIsNotAdvised(t *testing.T) {
 	vs := []classify.Verdict{
 		{GroupKey: "Docker Desktop", Bucket: classify.SubprocessAccumulation,
 			Confidence: 0.6, Basis: []string{"process count reached 30"}, GrowthMB: 400},
 	}
-	if got := advisoryTexts(t, vs); len(got) == 0 {
-		t.Error("Docker accumulating 400 MB produced no advisory")
+	if got := advisoryTexts(t, vs); len(got) != 0 {
+		t.Errorf("growth-only verdict produced %d advisories: %v", len(got), got)
+	}
+}
+
+// The same group is not announced twice within the rate limit.
+func TestAdvisoryIsRateLimited(t *testing.T) {
+	h := &daemonHandler{lastAdvisory: map[string]time.Time{}}
+	now := time.Now()
+	if last, ok := h.advisoriesThisWindow(now)["leftover"]; ok {
+		t.Fatalf("fresh handler already advised at %v", last)
+	}
+	h.markAdvised("leftover", now)
+	got := h.advisoriesThisWindow(now.Add(5 * time.Minute))["leftover"]
+	if got.IsZero() {
+		t.Fatal("markAdvised did not record the time")
+	}
+	if now.Add(5*time.Minute).Sub(got) >= advisoryRepeatEvery {
+		t.Errorf("a group advised 5 minutes ago is due again (limit is %v)",
+			advisoryRepeatEvery)
 	}
 }

@@ -28,6 +28,7 @@ import (
 	"memory_pilot/internal/pipeline"
 	"memory_pilot/internal/policy"
 	"memory_pilot/internal/pressure"
+	"memory_pilot/internal/relief"
 	"memory_pilot/internal/reporting"
 	"memory_pilot/internal/selfmonitor"
 	"memory_pilot/internal/store"
@@ -313,6 +314,16 @@ func (h *daemonHandler) recordVerdicts(s model.SystemSample, vs []classify.Verdi
 	if len(vs) == 0 {
 		return
 	}
+	// L1, from process-relief-engine.md: record the finding, prepare a plan,
+	// and do not act. The design is explicit that an advisory is owed to the
+	// owner only when there is something they can do about it — otherwise the
+	// tool is narrating their own work back at them.
+	//
+	// Measured before this change: 98 advisories in 45 minutes, every one at
+	// Normal pressure, most naming groups that were actively working (VS Code
+	// at 62% CPU, Chrome loading pages). That is the warning board the owner
+	// asked never to see again.
+	advisoryAt := h.advisoriesThisWindow(s.At)
 	for _, v := range vs {
 		// Only the shapes that need attention become advisories. A cache that
 		// released as much as it grew, or growth explained by CPU work, is a
@@ -339,6 +350,18 @@ func (h *daemonHandler) recordVerdicts(s model.SystemSample, vs []classify.Verdi
 		default:
 			continue // cache, unknown: recorded, not announced
 		}
+		// Growth alone is not news while the machine is comfortable. An
+		// advisory says "here is something you could do", and a growing group
+		// with nothing releasable offers nothing. Rate-limited to one per group
+		// per hour: repeating the same sentence every five minutes is how a
+		// warning list becomes something the reader stops seeing.
+		if !relief.ShouldRecommend(v.Bucket, false, false) {
+			continue
+		}
+		if last, ok := advisoryAt[v.GroupKey]; ok &&
+			s.At.Sub(last) < advisoryRepeatEvery {
+			continue
+		}
 		strength := "informational"
 		if v.Bucket == classify.LeakSuspicion {
 			strength = "recommendation"
@@ -351,6 +374,7 @@ func (h *daemonHandler) recordVerdicts(s model.SystemSample, vs []classify.Verdi
 		_ = h.lg.Append(map[string]any{"kind": "advisory", "at": s.At,
 			"strength": strength, "text": text,
 			"group": v.GroupKey, "bucket": v.Bucket, "confidence": v.Confidence})
+		h.markAdvised(v.GroupKey, s.At)
 	}
 	for _, ar := range results {
 		_ = h.lg.Append(map[string]any{"kind": "action_effect", "at": s.At,
@@ -362,6 +386,39 @@ func (h *daemonHandler) recordVerdicts(s model.SystemSample, vs []classify.Verdi
 // advisoryWorkloadMB is the size above which explained growth is still worth
 // one line. Below it the verdict stays in the ledger only.
 const advisoryWorkloadMB = 2048
+
+// advisoryRepeatEvery bounds how often the same group can be announced. An
+// advisory is a request for the owner's attention; repeating it every window
+// for a condition that has not changed spends that attention for nothing.
+const advisoryRepeatEvery = time.Hour
+
+// advisoriesThisWindow returns the last time each group was announced.
+//
+// In memory, so a restart resets the limit. That is acceptable: a restart is
+// itself a discontinuity in what the owner has been told, and re-announcing
+// once afterwards costs one line rather than a ledger read on every window.
+func (h *daemonHandler) advisoriesThisWindow(now time.Time) map[string]time.Time {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.lastAdvisory == nil {
+		h.lastAdvisory = map[string]time.Time{}
+	}
+	out := make(map[string]time.Time, len(h.lastAdvisory))
+	for k, v := range h.lastAdvisory {
+		out[k] = v
+	}
+	return out
+}
+
+// markAdvised records that a group has been announced.
+func (h *daemonHandler) markAdvised(group string, at time.Time) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.lastAdvisory == nil {
+		h.lastAdvisory = map[string]time.Time{}
+	}
+	h.lastAdvisory[group] = at
+}
 
 // criticalFreeBytes: F_C fallback critical fraction of RAM (constants.md §1).
 func criticalFreeBytes(p platform.Platform) float64 {
@@ -382,6 +439,7 @@ type daemonHandler struct {
 	startedAt time.Time
 
 	mu                             sync.Mutex
+	lastAdvisory                   map[string]time.Time
 	windowStart                    time.Time
 	lastSample                     model.SystemSample
 	lastForecast                   model.Forecast
