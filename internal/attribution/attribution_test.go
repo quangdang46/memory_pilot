@@ -390,3 +390,66 @@ func TestDeadSeriesAreEvicted(t *testing.T) {
 		t.Errorf("series map holds %d entries after 500 short-lived processes — leaking", n)
 	}
 }
+
+// Measured on the target machine: a process holding 200 MB and doing nothing
+// moved 217 MB by resident_size but 10 MB by phys_footprint. Growth must be
+// computed from the footprint, or an idle process reads as a leak and a real
+// leak reads as a shrinking process.
+func TestGrowthUsesFootprintNotResident(t *testing.T) {
+	a := New(300)
+	base := time.Now()
+	mk := func(at time.Time, footprint, resident uint64) model.ProcessSnapshot {
+		return model.ProcessSnapshot{At: at, Quality: model.QualGood,
+			Coverage: model.Coverage{Attempted: 1, Succeeded: 1},
+			Processes: []model.ProcessSample{{
+				Identity: model.ProcessIdentity{Pid: 7, Ppid: 1, StartTime: t0,
+					Executable: "leaky"},
+				FootprintBytes: footprint,
+				ResidentBytes:  resident,
+				Quality:        model.QualGood}}}
+	}
+	// Steady 100 MB footprint. Resident flaps wildly, as it does under
+	// pressure (measured range on this machine: 8 MB to 225 MB).
+	a.Observe(mk(base, 100<<20, 200<<20), sys(200000))
+	residents := []uint64{25 << 20, 190 << 20, 8 << 20, 225 << 20, 12 << 20}
+	for i, r := range residents {
+		at := base.Add(time.Duration(i+1) * 15 * time.Second)
+		a.Observe(mk(at, 100<<20, r), sys(200000))
+	}
+	w := a.Window(sys(200000))
+	if w.AccountedGrowth != 0 {
+		t.Errorf("idle process reported %d MB of growth from resident noise",
+			w.AccountedGrowth>>20)
+	}
+	if g := a.SeriesFor("leaky"); g.SlopeBytesS > 0.1e6 {
+		t.Errorf("slope %v B/s from resident noise, want ~0", g.SlopeBytesS)
+	}
+}
+
+// The converse: footprint climbs while resident collapses. This is what a real
+// leak looks like on a machine that is already swapping. It must be visible.
+func TestLeakVisibleWhileResidentCollapses(t *testing.T) {
+	a := New(300)
+	base := time.Now()
+	var foot uint64 = 60 << 20
+	var res uint64 = 70 << 20
+	for i := 0; i < 20; i++ {
+		at := base.Add(time.Duration(i) * 15 * time.Second)
+		s := model.ProcessSnapshot{At: at, Quality: model.QualGood,
+			Coverage: model.Coverage{Attempted: 1, Succeeded: 1},
+			Processes: []model.ProcessSample{{
+				Identity: model.ProcessIdentity{Pid: 7, Ppid: 1, StartTime: t0,
+					Executable: "leaky"},
+				FootprintBytes: foot, ResidentBytes: res, Quality: model.QualGood}}}
+		a.Observe(s, sys(200000))
+		foot += 10 << 20
+		if res > 20<<20 {
+			res -= 5 << 20 // being reclaimed, as under pressure
+		}
+	}
+	st := a.SeriesFor("leaky")
+	if st.SlopeBytesS < 0.5e6 {
+		t.Errorf("leak invisible: slope %v B/s while footprint grew 10 MB/15 s",
+			st.SlopeBytesS)
+	}
+}

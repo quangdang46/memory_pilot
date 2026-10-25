@@ -7,20 +7,21 @@ import "fmt"
 type Bucket string
 
 const (
-	WorkloadGrowth        Bucket = "workload_growth"
-	CacheOrRetrievable    Bucket = "cache_or_retrievable"
+	WorkloadGrowth         Bucket = "workload_growth"
+	CacheOrRetrievable     Bucket = "cache_or_retrievable"
 	SubprocessAccumulation Bucket = "subprocess_accumulation"
-	LeakSuspicion         Bucket = "leak_suspicion"
-	Unknown               Bucket = "unknown"
+	LeakSuspicion          Bucket = "leak_suspicion"
+	Unknown                Bucket = "unknown"
 )
 
 // Constants (leak-suspicion.md §2/§3).
 const (
-	QuietWindowS       = 600  // 10 min
-	PlateauWindowS     = 900  // 15 min
-	MinSuspectWindowS  = 1200 // 20 min
-	MinCoverageRatio   = 0.3
-	MinCorrelation     = 0.5
+	QuietWindowS      = 600  // 10 min
+	PlateauWindowS    = 900  // 15 min
+	MinSuspectWindowS = 1200 // 20 min
+	MinCoverageRatio  = 0.3
+	MinCorrelation    = 0.5
+	MinProcessGrowth  = 8 // a group this many processes wide is accumulation, not one leak
 )
 
 type SeriesStats struct {
@@ -35,6 +36,23 @@ type SeriesStats struct {
 	CeilingBytes  float64 // 0 = none known
 	DurationS     int64
 	CoverageRatio float64
+
+	// GrowthBytes is gross positive growth in the window, the quantity
+	// ReleaseBytes is compared against.
+	GrowthBytes int64
+	// ReleaseBytes is how much this group freed in the window. A group that
+	// frees at least as much as it grows is cycling, not accumulating —
+	// measured on the target machine, Chrome released 1.4-3.1 GB in windows
+	// where it grew 1.4-2.4 GB, and was labelled a leak four times running
+	// because this field did not exist.
+	ReleaseBytes int64
+	// ProcessCount is how many processes make up the group. Growth that
+	// arrives as more processes rather than as a bigger one is its own
+	// bucket and its own explanation.
+	ProcessCount int
+	// PeakProcessCount is the high-water mark over the group's history, so a
+	// rising count is distinguishable from a static population.
+	PeakProcessCount int
 }
 
 type Verdict struct {
@@ -58,6 +76,32 @@ func Classify(s SeriesStats) Verdict {
 	if s.SlopeBytesS <= 0 {
 		v.Bucket = Unknown
 		v.Basis = append(v.Basis, "no sustained growth in window")
+		return v
+	}
+
+	// cycling (cache) test — a group that frees as much as it grows is not
+	// accumulating anything, whatever its gross growth number says. This is
+	// checked first because it is a direct measurement of what happened, not
+	// an inference from the shape of a curve.
+	if s.ReleaseBytes > 0 && s.ReleaseBytes >= s.GrowthBytes {
+		v.Bucket = CacheOrRetrievable
+		v.Basis = append(v.Basis,
+			fmt.Sprintf("released %d MB while growing %d MB — cycling, not accumulating",
+				s.ReleaseBytes>>20, s.GrowthBytes>>20))
+		v.Confidence = 0.8
+		v.Alternatives = append(v.Alternatives, WorkloadGrowth)
+		return v
+	}
+
+	// subprocess accumulation — growth that arrives as more processes.
+	if s.PeakProcessCount >= MinProcessGrowth && s.ProcessCount > 0 &&
+		s.ActivityCorr < MinCorrelation {
+		v.Bucket = SubprocessAccumulation
+		v.Basis = append(v.Basis,
+			fmt.Sprintf("process count reached %d (high-water) with growth not correlated to activity (corr %.2f)",
+				s.PeakProcessCount, s.ActivityCorr))
+		v.Confidence = 0.6
+		v.Alternatives = append(v.Alternatives, WorkloadGrowth, LeakSuspicion)
 		return v
 	}
 

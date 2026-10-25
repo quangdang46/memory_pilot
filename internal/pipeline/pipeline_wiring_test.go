@@ -75,9 +75,9 @@ func mkSnap(at time.Time, entries [][4]any) model.ProcessSnapshot {
 		s.Processes = append(s.Processes, model.ProcessSample{
 			Identity: model.ProcessIdentity{Pid: e[0].(int32), Ppid: e[1].(int32),
 				StartTime: time.Unix(1700000000, 0), Executable: e[2].(string)},
-			ResidentBytes:  uint64(e[3].(int64)),
-			CpuUserS:       float64(e[3].(int64)) / 1e12,
-			Quality:        model.QualGood})
+			ResidentBytes: uint64(e[3].(int64)),
+			CpuUserS:      float64(e[3].(int64)) / 1e12,
+			Quality:       model.QualGood})
 	}
 	return s
 }
@@ -284,5 +284,86 @@ func TestUnauthorizedOwnedNotAnL2Target(t *testing.T) {
 	reg.Register(executor.OwnedPid{Pid: 4243, Pgid: 4243, Auth: "allow-stop"})
 	if got := reg.List(); len(got) != 1 || got[0] != "owned:4243" {
 		t.Errorf("authorized workload missing from L2 targets: %v", got)
+	}
+}
+
+// The failure measured in run 3: on a busy machine, a small sustained grower
+// was never judged because five bigger groups filled the top-N by bytes. The
+// dangerous set and the biggest set were disjoint.
+func TestSmallSustainedGrowerIsJudged(t *testing.T) {
+	lg := &recordingLedger{}
+	p := newTestPipeline(t, policy.ModeObserve, lg)
+	p.Cfg.TopN = 2 // harsher than the daemon's 5, to make the point
+
+	base := time.Now().Add(-25 * time.Minute)
+	start := base
+	pid := int32(900)
+	// Two loud groups that fill the top-2, plus one quiet sustained grower.
+	mk := func(i int, loudA, loudB, quiet int64) model.ProcessSnapshot {
+		at := base.Add(time.Duration(i) * 15 * time.Second)
+		s := model.ProcessSnapshot{At: at, Quality: model.QualGood}
+		add := func(id int32, ppid int32, exe string, bytes uint64) {
+			s.Processes = append(s.Processes, model.ProcessSample{
+				Identity: model.ProcessIdentity{Pid: id, Ppid: ppid,
+					StartTime: start, Executable: exe},
+				FootprintBytes: bytes, ResidentBytes: bytes,
+				Quality: model.QualGood})
+		}
+		add(1, 1, "wezterm-gui", uint64(loudA))
+		add(2, 1, "Google Chrome", uint64(loudB))
+		add(pid, 1, "quiet-grower", uint64(quiet))
+		s.Coverage = model.Coverage{Attempted: 3, Succeeded: 3}
+		return s
+	}
+	for i := 0; i < 100; i++ {
+		// loud groups oscillate (they release as much as they grow)
+		loud := int64(2<<30) + int64(i%2)*int64(1<<30)
+		quiet := int64(50<<20) + int64(i)*int64(1<<20) // steady 1 MB/15 s
+		p.ObserveProcesses(mk(i, loud, loud, quiet), sysSample(base.Add(time.Duration(i)*15*time.Second), 200000))
+	}
+	vs := p.CloseWindow(sysSample(base.Add(100*15*time.Second), 200000))
+
+	var judged []string
+	for _, v := range vs {
+		judged = append(judged, v.GroupKey)
+	}
+	found := false
+	for _, g := range judged {
+		if g == "quiet-grower" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("sustained small grower never judged; judged only %v — "+
+			"this is exactly the run-3 failure", judged)
+	}
+}
+
+// A group that releases as much as it grows must not be called a leak, no
+// matter how large its gross growth number is. Measured on Chrome: 1.4-3.1 GB
+// released against 1.4-2.4 GB grown, labelled leak four windows running.
+func TestCyclingGroupIsNotALeak(t *testing.T) {
+	v := classify.Classify(classify.SeriesStats{
+		GroupKey: "Google Chrome", SlopeBytesS: 5e6, GrowthBytes: 2400 << 20,
+		ReleaseBytes: 3000 << 20, DurationS: 2400, ActivityCorr: 0.2,
+		QuietS: 2000, CoverageRatio: 0.99, ProcessCount: 22,
+	})
+	if v.Bucket != classify.CacheOrRetrievable {
+		t.Errorf("cycling group classified %s, want cache_or_retrievable (basis %v)",
+			v.Bucket, v.Basis)
+	}
+}
+
+// Process accumulation must be reachable and must win over "leak" when the
+// growth is explained by a rising process count with no CPU correlation.
+func TestProcessAccumulationReachable(t *testing.T) {
+	v := classify.Classify(classify.SeriesStats{
+		GroupKey: "probe-children", SlopeBytesS: 2e6, GrowthBytes: 400 << 20,
+		ReleaseBytes: 0, DurationS: 2400, ActivityCorr: 0.0, QuietS: 2000,
+		CoverageRatio: 0.99, ProcessCount: 20, PeakProcessCount: 24,
+	})
+	if v.Bucket != classify.SubprocessAccumulation {
+		t.Errorf("accumulating group classified %s, want subprocess_accumulation (basis %v)",
+			v.Bucket, v.Basis)
 	}
 }

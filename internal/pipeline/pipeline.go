@@ -37,6 +37,13 @@ type Config struct {
 	// MinGroupGrowthBytes filters noise: a group that grew less than this in
 	// the window is not worth a classification record.
 	MinGroupGrowthBytes int64 // default 32 MB
+
+	// Selection beyond "top N by bytes" (see candidates): a group is also
+	// judged when its growth has endured, or when its shape says something
+	// ("cycling", "accumulating processes").
+	MinEvidenceS                int64   // default 1200: the classifier's own threshold
+	MinSustainedBps             float64 // default 50 KB/s: slow but real
+	MinProcessesForAccumulation int     // default 8
 }
 
 func (c Config) withDefaults() Config {
@@ -48,6 +55,15 @@ func (c Config) withDefaults() Config {
 	}
 	if c.MinGroupGrowthBytes <= 0 {
 		c.MinGroupGrowthBytes = 32 << 20
+	}
+	if c.MinEvidenceS <= 0 {
+		c.MinEvidenceS = 1200
+	}
+	if c.MinSustainedBps <= 0 {
+		c.MinSustainedBps = 50 << 10
+	}
+	if c.MinProcessesForAccumulation <= 0 {
+		c.MinProcessesForAccumulation = 8
 	}
 	return c
 }
@@ -148,21 +164,38 @@ func (p *Pipeline) CloseWindow(sys model.SystemSample) []classify.Verdict {
 	p.lastGroups = summaries
 	p.mu.Unlock()
 
+	// Which groups get judged. Ranking by absolute growth alone loses the one
+	// shape the product exists to find: on a busy machine a sustained 6 MB/s
+	// grower never places against a browser reporting 2 GB per window. It was
+	// measured — five labelled workloads ran 40 minutes and none was
+	// classified while Chrome was classified four windows running
+	// (evidence/2026-10-25-run3).
+	//
+	// So the candidate set is a union: the top N by absolute growth (the
+	// original behaviour, kept), plus every group whose *sustained* growth is
+	// material regardless of size, plus any group cycling or accumulating
+	// processes. Ranking finds the big; coverage of the shapes finds the
+	// dangerous.
+	candidates := p.candidates(w)
+
 	var verdicts []classify.Verdict
-	for i, g := range w.Groups {
-		if i >= p.Cfg.TopN {
-			break
+	for _, cand := range candidates {
+		g := cand.group
+		st := cand.stats
+		if st.GrowthBytes < p.Cfg.MinGroupGrowthBytes && st.ReleaseBytes < p.Cfg.MinGroupGrowthBytes {
+			continue // genuinely quiet group; nothing to say
 		}
-		if g.GrowthBytes < p.Cfg.MinGroupGrowthBytes {
-			continue
-		}
-		st := p.Attr.SeriesFor(g.AnchorKey)
 		v := classify.Classify(classify.SeriesStats{
 			GroupKey: st.GroupKey, SlopeBytesS: st.SlopeBytesS, Accel: st.Accel,
 			PlateauS: st.PlateauS, ActivityCorr: st.ActivityCorr,
 			ActivityS: st.ActivityS, QuietS: st.QuietS, CacheRole: st.CacheRole,
 			CeilingBytes: st.CeilingBytes, DurationS: st.DurationS,
 			CoverageRatio: st.CoverageRatio,
+			// The two signals that were measured and then dropped on the
+			// floor: release volume (clears a cycling cache) and process
+			// count (explains growth that arrives as more processes).
+			GrowthBytes: st.GrowthBytes, ReleaseBytes: st.ReleaseBytes,
+			ProcessCount: st.ProcessCount, PeakProcessCount: st.PeakProcessCount,
 		})
 		v.GrowthMB = g.GrowthBytes >> 20
 		verdicts = append(verdicts, v)
@@ -324,4 +357,89 @@ func (p *Pipeline) LastWindow() attribution.Window {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.lastWindow
+}
+
+// candidate is one group selected for classification, with the series stats
+// already computed (they are the expensive part and the selection needs them).
+type candidate struct {
+	group attribution.Group
+	stats attribution.SeriesStats
+	why   string // which rule selected it, recorded for explainability
+}
+
+// candidates decides which groups get judged.
+//
+// The rule that was here before — top N by absolute growth — was measured
+// wrong on a loaded machine: five labelled workloads ran 40 minutes and none
+// was classified, because a browser and a terminal reported thousands of MB
+// per window and the probes reported tens. The processes being warned about
+// and the processes growing without end were disjoint sets.
+//
+// Selection is now a union of three independent reasons to look at a group:
+//
+//  1. size     — top N by absolute growth (keeps the old behaviour)
+//  2. endurance — sustained growth over the long horizon, whatever its size,
+//     because a slow leak is exactly what outlives its catch
+//  3. shape    — the group is cycling (releasing as much as it grows) or
+//     accumulating processes, which are verdicts in themselves
+//
+// A group selected by any of these is classified once; the reason is recorded
+// in the verdict's basis so a reader can see why it was examined.
+func (p *Pipeline) candidates(w attribution.Window) []candidate {
+	seen := map[string]candidate{}
+	add := func(g attribution.Group, why string) {
+		if _, ok := seen[g.AnchorKey]; ok {
+			return
+		}
+		seen[g.AnchorKey] = candidate{group: g, why: why}
+	}
+
+	// 1. size — unchanged behaviour, kept so big movers are never dropped.
+	for i, g := range w.Groups {
+		if i >= p.Cfg.TopN {
+			break
+		}
+		add(g, "top-growth")
+	}
+
+	// 2 & 3. endurance and shape, over every group in the window.
+	for _, g := range w.Groups {
+		st := p.Attr.SeriesFor(g.AnchorKey)
+		// endurance: growth that has continued for a long time at a rate
+		// worth caring about. MinSustainedBps is deliberately low: the point
+		// is to catch the group nobody notices, not the loud one.
+		if st.DurationS >= p.Cfg.MinEvidenceS && st.SlopeBytesS >= p.Cfg.MinSustainedBps {
+			addWithStats(&seen, g, st, "sustained-growth")
+		}
+		// shape: cycling groups are caches regardless of size.
+		if st.ReleaseBytes > 0 && st.ReleaseBytes >= st.GrowthBytes &&
+			st.GrowthBytes >= p.Cfg.MinGroupGrowthBytes {
+			addWithStats(&seen, g, st, "cycling")
+		}
+		// shape: process accumulation.
+		if st.PeakProcessCount >= p.Cfg.MinProcessesForAccumulation {
+			addWithStats(&seen, g, st, "process-accumulation")
+		}
+	}
+
+	out := make([]candidate, 0, len(seen))
+	for _, c := range seen {
+		if c.stats.GroupKey == "" {
+			c.stats = p.Attr.SeriesFor(c.group.AnchorKey)
+		}
+		out = append(out, c)
+	}
+	// Stable order: biggest first, so the report reads naturally.
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].group.GrowthBytes > out[j].group.GrowthBytes
+	})
+	return out
+}
+
+func addWithStats(seen *map[string]candidate, g attribution.Group,
+	st attribution.SeriesStats, why string) {
+	if _, ok := (*seen)[g.AnchorKey]; ok {
+		return
+	}
+	(*seen)[g.AnchorKey] = candidate{group: g, stats: st, why: why}
 }

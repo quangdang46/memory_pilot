@@ -26,7 +26,7 @@ func (id Identity) Key() string {
 type series struct {
 	id        Identity
 	ppid      int32
-	prevBytes int64
+	prevBytes int64 // phys_footprint, not resident: see footprintAt
 	prevCPU   float64
 	cpuDelta  float64 // accumulated CPU seconds in the window
 	alive     bool
@@ -98,6 +98,7 @@ type history struct {
 	lastGrowth   time.Time // last sample where the group grew
 	lastActivity time.Time // last sample where any member burned CPU
 	growthBytes  int64     // total positive growth since firstSeen
+	peakProcs    int       // high-water process count
 	activeS      int64
 	quietS       int64
 	peakGrowthMB int64
@@ -134,10 +135,11 @@ func (a *Attributor) Observe(snap model.ProcessSnapshot, sys model.SystemSample)
 		key := id.Key()
 		s, ok := a.series[key]
 		if !ok {
-			a.series[key] = &series{id: id, ppid: p.Identity.Ppid, prevBytes: int64(p.ResidentBytes), alive: true}
+			a.series[key] = &series{id: id, ppid: p.Identity.Ppid,
+				prevBytes: int64(footprintAt(p)), alive: true}
 			continue
 		}
-		now := int64(p.ResidentBytes)
+		now := int64(footprintAt(p))
 		d := now - s.prevBytes
 		s.prevBytes = now
 		s.alive = true
@@ -204,6 +206,13 @@ func (a *Attributor) Observe(snap model.ProcessSnapshot, sys model.SystemSample)
 			s.alive = true
 		}
 	}
+	// Process count per group this tick, for accumulation detection.
+	tickProcs := map[string]int{}
+	for _, s := range a.series {
+		if s.alive {
+			tickProcs[a.groupFor(s.id)]++
+		}
+	}
 	// Fold this tick into each group's long-horizon record, once per tick.
 	dt := int64(a.sampleDT)
 	for gid, h := range a.history {
@@ -213,6 +222,9 @@ func (a *Attributor) Observe(snap model.ProcessSnapshot, sys model.SystemSample)
 			h.activeS += dt
 		} else if grew {
 			h.quietS += dt
+		}
+		if n := tickProcs[gid]; n > h.peakProcs {
+			h.peakProcs = n
 		}
 	}
 	// Retire dead series. These maps are keyed by (pid, start time), so they
@@ -342,7 +354,7 @@ func (a *Attributor) ProcessCount() int {
 // "unexplained" reading. Without this signal every growing group would be
 // classified identically, which is what made reports useless.
 func (a *Attributor) SeriesFor(anchor string) SeriesStats {
-	var totalGrowth int64
+	var totalGrowth, totalRelease int64
 	var procs int64
 	// Membership is decided by the anchor, not by whether this particular
 	// window happens to show growth: after a Reset a steadily-growing group
@@ -353,9 +365,12 @@ func (a *Attributor) SeriesFor(anchor string) SeriesStats {
 			continue
 		}
 		totalGrowth += s.delta
+		totalRelease += s.release
 		procs++
 	}
-	st := SeriesStats{GroupKey: anchor, DurationS: a.windowS, ProcessCount: int(procs)}
+	st := SeriesStats{GroupKey: anchor, DurationS: a.windowS,
+		GrowthBytes: totalGrowth, ReleaseBytes: totalRelease,
+		ProcessCount: int(procs)}
 	if a.windowS > 0 {
 		st.SlopeBytesS = float64(totalGrowth) / float64(a.windowS)
 	}
@@ -380,6 +395,16 @@ func (a *Attributor) SeriesFor(anchor string) SeriesStats {
 		if h.activeS+h.quietS > 0 {
 			st.ActivityCorr = float64(h.activeS) / float64(h.activeS+h.quietS)
 		}
+		// Plateau: how long since this group last grew. The classifier's
+		// cache branch keys on it, and it was never computed before, so that
+		// branch was unreachable and every cache read as a leak.
+		if !h.lastGrowth.IsZero() {
+			st.PlateauS = int64(a.now.Sub(h.lastGrowth).Seconds())
+		}
+		st.PeakProcessCount = h.peakProcs
+	}
+	if st.PeakProcessCount < st.ProcessCount {
+		st.PeakProcessCount = st.ProcessCount
 	}
 	return st
 }
@@ -409,7 +434,11 @@ type SeriesStats struct {
 	CeilingBytes  float64
 	DurationS     int64
 	CoverageRatio float64
-	ProcessCount  int
+
+	GrowthBytes      int64
+	ReleaseBytes     int64
+	ProcessCount     int
+	PeakProcessCount int
 }
 
 // groupFor: nearest-anchor with sticky membership (§4).
@@ -563,4 +592,25 @@ func (a *Attributor) sweepDeadSeries() {
 			delete(a.history, e.gid)
 		}
 	}
+}
+
+// footprintAt is the memory this process actually holds.
+//
+// It must be phys_footprint, not resident_size. Measured on the target machine
+// (evidence/2026-10-25-metric-vanishes): a process holding a fixed 200 MB and
+// doing nothing moved 217 MB by resident_size across 13 samples and 10 MB by
+// phys_footprint; a process that pushed the system into pressure fell from
+// 71 MB to 8 MB resident while its footprint stayed at 428 MB. Resident pages
+// are reclaimed (swapped, compressed) precisely when the machine is under
+// pressure — the only condition this product exists for — so measuring them
+// makes a real leak read as a shrinking process.
+//
+// Fallback: a snapshot from a source that only reports resident size (tests,
+// replay corpora) still works, because there footprint == 0 is not a real
+// reading.
+func footprintAt(p model.ProcessSample) uint64 {
+	if p.FootprintBytes > 0 {
+		return p.FootprintBytes
+	}
+	return p.ResidentBytes
 }
