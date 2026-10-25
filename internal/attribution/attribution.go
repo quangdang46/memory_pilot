@@ -224,7 +224,13 @@ func (a *Attributor) Observe(snap model.ProcessSnapshot, sys model.SystemSample)
 			a.history[gid] = &history{firstSeen: snap.At}
 		}
 		a.history[gid].lastSeen = snap.At
-		if d > 0 {
+		// Only material growth resets the plateau clock. A few kilobytes of
+		// jitter is a page fault, not a group still climbing: measured, 1 KB
+		// every third tick reset PlateauS to 30 s and made a group flat for
+		// 25 minutes read as "sustained growth with no plateau" — the exact
+		// wording that classified probe-plateau, probe-sawtooth and
+		// probe-children as leaks in run18.
+		if d >= growthNoiseBytes {
 			a.history[gid].lastGrowth = snap.At
 		}
 		if active {
@@ -520,6 +526,11 @@ func (a *Attributor) sampleIntervalS() float64 {
 	}
 	return a.sampleDT
 }
+
+// growthNoiseBytes is the least increase that counts as "still growing" for
+// the plateau clock. Below it, page-level jitter would keep resetting a group
+// that is, for every practical purpose, flat.
+const growthNoiseBytes = 1 << 20
 
 const activityCPUS = 0.02 // 20 ms of CPU between samples counts as active
 

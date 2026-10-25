@@ -213,6 +213,17 @@ func (p *Pipeline) CloseWindow(sys model.SystemSample) []classify.Verdict {
 				"bucket": v.Bucket, "confidence": v.Confidence,
 				"basis": v.Basis, "alternatives": v.Alternatives,
 				"growth_mb": g.GrowthBytes >> 20, "processes": g.Processes,
+				// The inputs behind the verdict, so a reader can check the
+				// reasoning instead of taking the sentence on faith.
+				"signals": map[string]any{
+					"plateau_s": st.PlateauS, "duration_s": st.DurationS,
+					"quiet_s": st.QuietS, "active_s": st.ActivityS,
+					"activity_corr": st.ActivityCorr,
+					"growth_bytes": st.GrowthBytes, "release_bytes": st.ReleaseBytes,
+					"process_count": st.ProcessCount,
+					"peak_processes": st.PeakProcessCount,
+					"slope_bps":      st.SlopeBytesS,
+				},
 				"text": classify.RenderVerdict(v, g.GrowthBytes>>20),
 			})
 		}
