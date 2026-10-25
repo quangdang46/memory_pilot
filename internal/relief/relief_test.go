@@ -396,3 +396,20 @@ func TestUnverifiedReliefIsStatedAsAnUpperBound(t *testing.T) {
 		t.Errorf("unverified relief claims to cover the gap:\n%s", txt)
 	}
 }
+
+// Nothing releasable and a real shortfall: say exactly that. This is the
+// sentence a freshly restarted daemon owes the owner, instead of naming
+// processes it has not finished watching.
+func TestNothingReleasableWithShortfallIsHonest(t *testing.T) {
+	r := &Recommendation{Severity: "Warn", Shortfall: 2048 << 20}
+	txt := r.Text()
+	if !strings.Contains(txt, "2048 MB") {
+		t.Errorf("the gap is not quantified:\n%s", txt)
+	}
+	if !strings.Contains(txt, "nothing can be released safely") {
+		t.Errorf("the absence of a release is not stated:\n%s", txt)
+	}
+	if strings.Contains(txt, "closing") {
+		t.Errorf("an empty recommendation talks about closing things:\n%s", txt)
+	}
+}
