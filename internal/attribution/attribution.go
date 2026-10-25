@@ -316,14 +316,22 @@ func (a *Attributor) Observe(snap model.ProcessSnapshot, sys model.SystemSample)
 			s.alive = true
 		}
 	}
-	// Process count and total footprint per group this tick.
+	// Process count and total footprint per group. The byte total includes
+	// every member we still have a series for, whether or not it was visible in
+	// this particular sample: at 75% coverage, a total that only counts the
+	// visible members jumps by gigabytes between ticks and turns a flat group
+	// into -1077 MB of "growth".
 	tickProcs := map[string]int{}
 	tickBytes := map[string]int64{}
 	for _, s := range a.series {
 		if s.alive {
 			gid := a.groupFor(s.id)
 			tickProcs[gid]++
-			tickBytes[gid] += s.prevBytes
+		}
+	}
+	for _, s := range a.series {
+		if s.alive && s.prevBytes > 0 {
+			tickBytes[a.groupFor(s.id)] += s.prevBytes
 		}
 	}
 	// Fold this tick into each group's long-horizon record, once per tick.
