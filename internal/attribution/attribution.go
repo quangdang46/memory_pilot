@@ -349,10 +349,12 @@ func (a *Attributor) windowLocked(sysNow model.SystemSample) Window {
 		// to the classifier. It must not join the growth ranking (that would
 		// tell the user to worry about a process that is stable), so flat
 		// groups are collected separately and judged, not ranked.
-		if s.delta == 0 && s.release == 0 {
-			addFlat(&w, a, s.id)
-			continue
-		}
+		//
+		// The decision is made per GROUP, once every member has been seen, not
+		// here per process: splitting a group by which of its processes moved
+		// this window handed the classifier a process count from one half and
+		// growth from the other. Measured in run20 on probe-children — 21 real
+		// processes, reported as 15, then 21, then 1 while all 21 were running.
 		gid := a.groupFor(s.id)
 		g := byGroup[gid]
 		if g == nil {
@@ -372,6 +374,13 @@ func (a *Attributor) windowLocked(sysNow model.SystemSample) Window {
 		}
 	}
 	for _, g := range byGroup {
+		// Now that every member is counted, decide where the group belongs.
+		// A group that moved nothing this window is judged (Flat) but not
+		// ranked; one that moved is ranked and judged.
+		if g.GrowthBytes == 0 && g.ReleaseBytes == 0 {
+			addFlat(&w, *g)
+			continue
+		}
 		w.Groups = append(w.Groups, *g)
 		w.AccountedGrowth += g.GrowthBytes
 	}
@@ -396,16 +405,17 @@ func (a *Attributor) windowLocked(sysNow model.SystemSample) Window {
 	return w
 }
 
-// addFlat records a group that did not move this window, for re-judging.
-func addFlat(w *Window, a *Attributor, id Identity) {
-	gid := a.groupFor(id)
+// addFlat records a whole group that did not move this window, for re-judging.
+// It takes the finished Group so the process count is the group's real one,
+// not the number of members that happened to be flat.
+func addFlat(w *Window, g Group) {
 	for i := range w.Flat {
-		if w.Flat[i].AnchorKey == gid {
-			w.Flat[i].Processes++
+		if w.Flat[i].AnchorKey == g.AnchorKey {
+			w.Flat[i].Processes += g.Processes
 			return
 		}
 	}
-	w.Flat = append(w.Flat, Group{AnchorKey: gid, Label: a.groupLabel(gid), Processes: 1})
+	w.Flat = append(w.Flat, g)
 }
 
 func honestNote(w Window) string {

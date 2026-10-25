@@ -703,3 +703,58 @@ func TestNeverGrownGroupReportsItsFullPlateau(t *testing.T) {
 			"plateau branch cannot fire on a group that never grew", st.PlateauS)
 	}
 }
+
+// A group's process count must be the group's, not the number of its members
+// that happened to move this window. Splitting per process gave the classifier
+// a count from one half of a group and growth from the other. Measured in
+// run20 on probe-children: 21 real processes reported as 15, then 21, then 1
+// while all 21 were still running.
+func TestGroupProcessCountIsWholeGroup(t *testing.T) {
+	a := New(300)
+	base := time.Now()
+	// Ten children under one parent: nine flat at 15 MB, one that grew 200 MB.
+	mk := func(at time.Time, growMB uint64) model.ProcessSnapshot {
+		procs := []model.ProcessSample{{Identity: model.ProcessIdentity{
+			Pid: 1000, Ppid: 1, StartTime: t0, Executable: "probe-children"},
+			FootprintBytes: 3 << 20, Quality: model.QualGood}}
+		for i := 1; i <= 9; i++ {
+			procs = append(procs, model.ProcessSample{Identity: model.ProcessIdentity{
+				Pid: int32(1000 + i), Ppid: 1000, StartTime: t0,
+				Executable: "probe-children"}, FootprintBytes: 15 << 20,
+				Quality: model.QualGood})
+		}
+		procs = append(procs, model.ProcessSample{Identity: model.ProcessIdentity{
+			Pid: 1100, Ppid: 1000, StartTime: t0, Executable: "probe-children"},
+			FootprintBytes: (15 + growMB) << 20, Quality: model.QualGood})
+		return model.ProcessSnapshot{At: at, Quality: model.QualGood,
+			Coverage:  model.Coverage{Attempted: len(procs), Succeeded: len(procs)},
+			Processes: procs}
+	}
+	a.Observe(mk(base, 0), sys(200000))
+	a.Observe(mk(base.Add(15*time.Second), 200), sys(200000))
+	w := a.Window(sys(200000))
+
+	// The classifier reads SeriesFor, which is what must carry the whole group.
+	st := a.SeriesFor("probe-children")
+	if st.ProcessCount != 11 {
+		t.Errorf("SeriesFor reports %d processes, want 11: the classifier is "+
+			"shown growth from one member and a process count from another",
+			st.ProcessCount)
+	}
+	// And the window must not present the same group twice, once as a mover
+	// and once as flat: that is the split itself.
+	inGroups, inFlat := false, false
+	for _, g := range w.Groups {
+		if g.AnchorKey == "probe-children" {
+			inGroups = true
+		}
+	}
+	for _, g := range w.Flat {
+		if g.AnchorKey == "probe-children" {
+			inFlat = true
+		}
+	}
+	if inGroups && inFlat {
+		t.Error("group appears both as a mover and as flat in one window")
+	}
+}
