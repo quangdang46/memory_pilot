@@ -467,22 +467,27 @@ func TestVerdictSeesTheClosedWindow(t *testing.T) {
 // minutes and the mapping is what was wrong.
 func TestDecidedGrowthUsesTheDecidingHorizon(t *testing.T) {
 	cases := []struct {
-		bucket    classify.Bucket
-		win, long int64
-		wantMB    int64
-		reason    string
+		bucket          classify.Bucket
+		win, net, gross int64
+		wantMB          int64
+		reason          string
 	}{
-		{classify.LeakSuspicion, 0, 409 << 20, 409, "suspicion decides on lifetime growth"},
-		{classify.SubprocessAccumulation, 0, 288 << 20, 288, "accumulation decides on lifetime growth"},
-		{classify.WorkloadGrowth, 150 << 20, 900 << 20, 150, "workload is a window judgement"},
-		{classify.CacheOrRetrievable, 0, 900 << 20, 0, "cache is a window judgement"},
-		{classify.LeakSuspicion, 0, 0, 0, "no lifetime record yet: fall back to the window"},
+		{classify.LeakSuspicion, 0, 248 << 20, 16250 << 20, 248,
+			"node holding 3.2 GB: the sentence must say 248 MB, not 16250 MB"},
+		{classify.SubprocessAccumulation, 0, 319 << 20, 320 << 20, 319,
+			"accumulation quotes net growth"},
+		{classify.LeakSuspicion, 0, 0, 500 << 20, 500,
+			"no net record yet: fall back to gross"},
+		{classify.WorkloadGrowth, 150 << 20, 900 << 20, 900 << 20, 150,
+			"workload is a window judgement"},
+		{classify.CacheOrRetrievable, 0, 900 << 20, 900 << 20, 0,
+			"cache is a window judgement"},
 	}
 	for _, c := range cases {
-		got := decidedGrowthMB(c.bucket, c.win, c.long)
+		got := decidedGrowthMB(c.bucket, c.win, c.net, c.gross)
 		if got != c.wantMB {
-			t.Errorf("%s: bucket %s win=%dMB long=%dMB → %dMB, want %dMB",
-				c.reason, c.bucket, c.win>>20, c.long>>20, got, c.wantMB)
+			t.Errorf("%s: bucket %s win=%dMB net=%dMB gross=%dMB → %dMB, want %dMB",
+				c.reason, c.bucket, c.win>>20, c.net>>20, c.gross>>20, got, c.wantMB)
 		}
 	}
 }

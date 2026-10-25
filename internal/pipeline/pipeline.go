@@ -207,7 +207,7 @@ func (p *Pipeline) CloseWindow(sys model.SystemSample) []classify.Verdict {
 			LongGrowthBytes: st.LongGrowthBytes, LongPeakProcesses: st.LongPeakProcesses,
 			NetGrowthBytes: st.NetGrowthBytes,
 		})
-		decidedMB := decidedGrowthMB(v.Bucket, st.GrowthBytes, st.LongGrowthBytes)
+		decidedMB := decidedGrowthMB(v.Bucket, st.GrowthBytes, st.NetGrowthBytes, st.LongGrowthBytes)
 		v.GrowthMB = decidedMB
 		verdicts = append(verdicts, v)
 		if p.Ledger != nil {
@@ -432,11 +432,18 @@ func (p *Pipeline) attrStats(anchor string) attribution.SeriesStats {
 // lifetime growth, so quoting the current window produced "grew by 0 MB —
 // unexplained sustained growth" (observed at 14:36 on 2.1.310, whose own basis
 // said 409 MB). Workload and cache are window judgements and keep the window.
-func decidedGrowthMB(b classify.Bucket, windowBytes, longBytes int64) int64 {
+func decidedGrowthMB(b classify.Bucket, windowBytes, netBytes, grossBytes int64) int64 {
 	switch b {
 	case classify.SubprocessAccumulation, classify.LeakSuspicion:
-		if longBytes > 0 {
-			return longBytes >> 20
+		// netBytes, not grossBytes: the branch decides on what the group
+		// actually added. Quoting gross made a group holding 3.2 GB steady
+		// with 248 MB of net growth print "grew by 16250 MB" — a number the
+		// reader can see is impossible on a 16 GB machine.
+		if netBytes > 0 {
+			return netBytes >> 20
+		}
+		if netBytes == 0 && grossBytes > 0 {
+			return grossBytes >> 20 // pre-history fallback only
 		}
 	}
 	return windowBytes >> 20
