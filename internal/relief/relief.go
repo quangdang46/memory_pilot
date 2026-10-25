@@ -280,9 +280,29 @@ func (r *Recommendation) Text() string {
 		}
 	}
 	if len(abandoned) == 0 {
-		s := fmt.Sprintf("%d candidate(s) below the bar for closing:", len(r.Candidates))
+		// Nothing is abandoned outright, but idle processes holding gigabytes
+		// are still the only actionable thing on the machine. Say what they
+		// are and what closing them would return — "below the bar" without a
+		// number and a next step is the same non-answer this tier replaced.
+		total := int64(0)
+		s := fmt.Sprintf("%d process(es) are idle but not verified abandoned:\n",
+			len(r.Candidates))
 		for _, c := range r.Candidates {
-			s += fmt.Sprintf("\n  %s (%d MB, %s)", c.Group, c.FootprintMB(), c.State)
+			total += c.ExpectedReliefBytes
+			s += fmt.Sprintf("  %s (%d MB)\n", c.Group, c.FootprintMB())
+			for _, e := range c.Evidence {
+				s += fmt.Sprintf("      %s\n", e)
+			}
+		}
+		s += fmt.Sprintf("closing all of them would return ~%d MB", total>>20)
+		if r.Shortfall > 0 {
+			if total >= r.Shortfall {
+				s += fmt.Sprintf("; the shortfall is %d MB — this covers it",
+					r.Shortfall>>20)
+			} else {
+				s += fmt.Sprintf("; the shortfall is %d MB — this will NOT cover it",
+					r.Shortfall>>20)
+			}
 		}
 		return s
 	}

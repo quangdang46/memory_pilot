@@ -251,3 +251,38 @@ func TestOrphanedMemberIsAbandoned(t *testing.T) {
 		t.Errorf("orphaned idle member: %+v", cs)
 	}
 }
+
+// The recommendation must be actionable even when nothing is verified
+// abandoned. "3 candidates below the bar" is the non-answer this tier replaced:
+// an idle process holding 2.7 GB is the only thing on the machine the owner can
+// act on, and the sentence must say what closing it returns.
+func TestIdleProcessesAreNamedWithTheirRelief(t *testing.T) {
+	f := GroupFacts{Group: "claude", IsAgent: true, Members: []Member{
+		{Pid: 11265, Exe: "rust-analyzer", Footprint: 1017 << 20,
+			QuietFor: 48 * time.Hour, ParentAlive: true},
+		{Pid: 21432, Exe: "rust-analyzer", Footprint: 859 << 20,
+			QuietFor: 48 * time.Hour, ParentAlive: true},
+		{Pid: 37060, Exe: "rust-analyzer", Footprint: 821 << 20,
+			QuietFor: 13 * time.Hour, ParentAlive: true},
+		{Pid: 96329, Exe: "node", Footprint: 1803 << 20,
+			QuietFor: time.Second, ParentAlive: true}, // busy: excluded
+	}}
+	cs := AssessMembers(f)
+	Rank(cs)
+	if len(cs) != 3 {
+		t.Fatalf("%d candidates, want 3 (the busy node must not be one)", len(cs))
+	}
+	r := &Recommendation{Severity: "Prevent", Shortfall: 2 << 30, Candidates: cs}
+	for _, c := range cs {
+		r.TotalRelief += c.ExpectedReliefBytes
+	}
+	txt := r.Text()
+	for _, want := range []string{"rust-analyzer", "2697", "covers it"} {
+		if !strings.Contains(txt, want) {
+			t.Errorf("recommendation does not mention %q:\n%s", want, txt)
+		}
+	}
+	if strings.Contains(txt, "node (pid 96329)") {
+		t.Errorf("a busy process was named as releasable:\n%s", txt)
+	}
+}
