@@ -6,6 +6,7 @@ package attribution
 import (
 	"fmt"
 	"sort"
+	"sync"
 	"time"
 
 	"memory_pilot/internal/model"
@@ -67,9 +68,22 @@ type Window struct {
 	Coverage        model.Coverage
 	Quality         model.Quality
 	Note            string // honest-language note attached to every report
+
+	// Flat are groups that did not move this window. Excluded from the growth
+	// ranking (a stable process is not a problem), but still eligible for
+	// classification: a group that grew and then stopped is a cache, and
+	// re-judging it is the only way its earlier verdict can be corrected.
+	Flat []Group
 }
 
 type Attributor struct {
+	// mu guards every field below. Two goroutines feed this type on different
+	// cadences: the process sampler (15 s) appends snapshots while the system
+	// sampler (5 s) closes windows and reads series. Without a lock that is a
+	// concurrent map read and write — which crashed the live daemon with
+	// "fatal error: concurrent map read and map write" the first time the
+	// pipeline actually ran end to end.
+	mu             sync.Mutex
 	series         map[string]*series
 	groups         map[string]string // identity key -> anchor group id (sticky)
 	parents        map[int32]int32   // pid -> ppid from the latest snapshot
@@ -113,6 +127,8 @@ func New(windowS int64) *Attributor {
 // Observe feeds one process snapshot + system sample. Deltas are computed only
 // across identical identities (never across identity change — §2 rule 4).
 func (a *Attributor) Observe(snap model.ProcessSnapshot, sys model.SystemSample) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.now = snap.At
 	a.parents = make(map[int32]int32, len(snap.Processes))
 	for _, p := range snap.Processes {
@@ -269,6 +285,12 @@ func (a *Attributor) Observe(snap model.ProcessSnapshot, sys model.SystemSample)
 
 // Window closes the current attribution window (called at window boundaries).
 func (a *Attributor) Window(sysNow model.SystemSample) Window {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.windowLocked(sysNow)
+}
+
+func (a *Attributor) windowLocked(sysNow model.SystemSample) Window {
 	w := Window{
 		At: sysNow.At, WindowS: a.windowS,
 		ObservedGrowth:  a.observedGrowth,
@@ -278,7 +300,16 @@ func (a *Attributor) Window(sysNow model.SystemSample) Window {
 	}
 	byGroup := map[string]*Group{}
 	for _, s := range a.series {
-		if !s.alive || s.delta == 0 {
+		if !s.alive {
+			continue
+		}
+		// A group that grew and then stopped still has a verdict from when it
+		// was climbing, and the only way to correct it is to keep it visible
+		// to the classifier. It must not join the growth ranking (that would
+		// tell the user to worry about a process that is stable), so flat
+		// groups are collected separately and judged, not ranked.
+		if s.delta == 0 && s.release == 0 {
+			addFlat(&w, a, s.id)
 			continue
 		}
 		gid := a.groupFor(s.id)
@@ -324,6 +355,18 @@ func (a *Attributor) Window(sysNow model.SystemSample) Window {
 	return w
 }
 
+// addFlat records a group that did not move this window, for re-judging.
+func addFlat(w *Window, a *Attributor, id Identity) {
+	gid := a.groupFor(id)
+	for i := range w.Flat {
+		if w.Flat[i].AnchorKey == gid {
+			w.Flat[i].Processes++
+			return
+		}
+	}
+	w.Flat = append(w.Flat, Group{AnchorKey: gid, Label: a.groupLabel(gid), Processes: 1})
+}
+
 func honestNote(w Window) string {
 	return fmt.Sprintf("%d groups grew by a total of %d MB; system headroom fell %d MB. Shared pages are counted per-process, so process sums can exceed the system delta. Compressed pages (%d MB in compressor) belong to no process.",
 		len(w.Groups), w.AccountedGrowth>>20, w.ObservedGrowth>>20, w.CompressorBytes>>20)
@@ -335,6 +378,12 @@ func honestNote(w Window) string {
 // like every process was born, erasing its growth). A window that never
 // resets accumulates one day of drift and reports it as "the last 5 minutes".
 func (a *Attributor) Reset() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.resetLocked()
+}
+
+func (a *Attributor) resetLocked() {
 	for _, s := range a.series {
 		s.delta, s.release = 0, 0
 		s.cpuDelta = 0
@@ -348,6 +397,8 @@ func (a *Attributor) Reset() {
 // ProcessCount reports how many process series are alive, so a caller can
 // distinguish "no data yet" from "a window where nothing grew".
 func (a *Attributor) ProcessCount() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	n := 0
 	for _, s := range a.series {
 		if s.alive {
@@ -364,6 +415,12 @@ func (a *Attributor) ProcessCount() int {
 // "unexplained" reading. Without this signal every growing group would be
 // classified identically, which is what made reports useless.
 func (a *Attributor) SeriesFor(anchor string) SeriesStats {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.seriesForLocked(anchor)
+}
+
+func (a *Attributor) seriesForLocked(anchor string) SeriesStats {
 	var totalGrowth, totalRelease int64
 	var procs int64
 	// Membership is decided by the anchor, not by whether this particular
@@ -624,4 +681,16 @@ func footprintAt(p model.ProcessSample) uint64 {
 		return p.FootprintBytes
 	}
 	return p.ResidentBytes
+}
+
+// CloseWindowAndReset reads the window and clears its accumulation in one
+// critical section. Calling Window() and then Reset() separately lets the
+// process sampler append between them, so deltas that arrived in between are
+// silently discarded — and it is two lock acquisitions for one logical step.
+func (a *Attributor) CloseWindowAndReset(sysNow model.SystemSample) Window {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	w := a.windowLocked(sysNow)
+	a.resetLocked()
+	return w
 }

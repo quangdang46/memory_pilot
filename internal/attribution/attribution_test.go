@@ -492,3 +492,36 @@ func TestReleaseAccumulatesAcrossResets(t *testing.T) {
 			st.ReleaseBytes>>20, st.GrowthBytes>>20)
 	}
 }
+
+// The live daemon crashed with "concurrent map read and map write": the
+// process sampler (15 s) and the system sampler (5 s) both drive the
+// Attributor from different goroutines. This test is the same shape; run it
+// with -race to prove the lock is real.
+func TestConcurrentObserveAndWindow(t *testing.T) {
+	a := New(60)
+	base := time.Now()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 300; i++ {
+			at := base.Add(time.Duration(i) * 15 * time.Second)
+			s := model.ProcessSnapshot{At: at, Quality: model.QualGood,
+				Coverage: model.Coverage{Attempted: 2, Succeeded: 2},
+				Processes: []model.ProcessSample{
+					{Identity: model.ProcessIdentity{Pid: 1, Ppid: 0, StartTime: t0,
+						Executable: "wezterm-gui"}, FootprintBytes: uint64(i) << 20},
+					{Identity: model.ProcessIdentity{Pid: 2, Ppid: 1, StartTime: t0,
+						Executable: "node"}, FootprintBytes: uint64(2*i) << 20},
+				}}
+			a.Observe(s, sys(200000))
+		}
+	}()
+	for i := 0; i < 300; i++ {
+		s := sys(200000)
+		s.At = base.Add(time.Duration(i) * 5 * time.Second)
+		a.CloseWindowAndReset(s)
+		_ = a.SeriesFor("wezterm-gui")
+		_ = a.ProcessCount()
+	}
+	<-done
+}

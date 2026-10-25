@@ -111,7 +111,7 @@ func (p *Pipeline) ObserveProcesses(snap model.ProcessSnapshot, sys model.System
 // CloseWindow classifies the window and returns the verdicts it recorded.
 // Called on the window boundary by the daemon's system tick.
 func (p *Pipeline) CloseWindow(sys model.SystemSample) []classify.Verdict {
-	w := p.Attr.Window(sys)
+	w := p.Attr.CloseWindowAndReset(sys)
 	p.mu.Lock()
 	p.lastWindow = w
 	p.mu.Unlock()
@@ -182,8 +182,16 @@ func (p *Pipeline) CloseWindow(sys model.SystemSample) []classify.Verdict {
 	for _, cand := range candidates {
 		g := cand.group
 		st := cand.stats
-		if st.GrowthBytes < p.Cfg.MinGroupGrowthBytes && st.ReleaseBytes < p.Cfg.MinGroupGrowthBytes {
-			continue // genuinely quiet group; nothing to say
+		// A group that has stopped growing is exactly the group whose earlier
+		// verdict may be wrong: it was called a leak while climbing and nobody
+		// re-examines it now that it plateaued. Filtering it out here is why a
+		// cache can never be re-judged as a cache. So the floor applies only to
+		// groups that are NEW to us; a group with prior history is re-judged
+		// on the evidence it now presents.
+		hasHistory := st.DurationS > 0
+		if !hasHistory && st.GrowthBytes < p.Cfg.MinGroupGrowthBytes &&
+			st.ReleaseBytes < p.Cfg.MinGroupGrowthBytes {
+			continue // genuinely quiet newcomer; nothing to say
 		}
 		v := classify.Classify(classify.SeriesStats{
 			GroupKey: st.GroupKey, SlopeBytesS: st.SlopeBytesS, Accel: st.Accel,
@@ -209,7 +217,6 @@ func (p *Pipeline) CloseWindow(sys model.SystemSample) []classify.Verdict {
 			})
 		}
 	}
-	p.Attr.Reset()
 	p.windowStart = sys.At
 	return verdicts
 }
@@ -400,6 +407,17 @@ func (p *Pipeline) candidates(w attribution.Window) []candidate {
 			break
 		}
 		add(g, "top-growth")
+	}
+	// 1b. re-judge groups with prior history, even if they are quiet now.
+	// A group that grew and then plateaued has a verdict from when it was
+	// climbing; without this it is never revisited and a stale "leak" can
+	// never be corrected to "cache". These come from Window.Flat, which
+	// deliberately keeps them out of the growth ranking.
+	for _, g := range w.Flat {
+		st := p.Attr.SeriesFor(g.AnchorKey)
+		if st.DurationS > 0 {
+			addWithStats(&seen, g, st, "re-judge")
+		}
 	}
 
 	// 2 & 3. endurance and shape, over every group in the window.

@@ -367,3 +367,51 @@ func TestProcessAccumulationReachable(t *testing.T) {
 			v.Bucket, v.Basis)
 	}
 }
+
+// A group that grew and then stopped must be re-judged, not silently dropped.
+// While it was climbing it may have been called a leak; once it plateaus the
+// correct verdict is a cache. Filtering it out for low current growth is why
+// that correction could never happen.
+func TestPlateauedGroupIsReJudged(t *testing.T) {
+	lg := &recordingLedger{}
+	p := newTestPipeline(t, policy.ModeObserve, lg)
+	p.Cfg.MinGroupGrowthBytes = 32 << 20
+
+	base := time.Now().Add(-30 * time.Minute)
+	start := base
+	mk := func(i int, mb uint64) model.ProcessSnapshot {
+		at := base.Add(time.Duration(i) * 15 * time.Second)
+		return model.ProcessSnapshot{At: at, Quality: model.QualGood,
+			Coverage: model.Coverage{Attempted: 1, Succeeded: 1},
+			Processes: []model.ProcessSample{{
+				Identity: model.ProcessIdentity{Pid: 55, Ppid: 1, StartTime: start,
+					Executable: "cachey"},
+				FootprintBytes: mb, Quality: model.QualGood}}}
+	}
+	// 20 samples growing to 400MB, then 60 samples flat at 400MB.
+	var mb uint64 = 10 << 20
+	for i := 0; i < 80; i++ {
+		if i < 20 {
+			mb += 20 << 20
+		}
+		at := base.Add(time.Duration(i) * 15 * time.Second)
+		p.ObserveProcesses(mk(i, mb), sysSample(at, 200000))
+		if i%20 == 19 {
+			p.CloseWindow(sysSample(at, 200000))
+		}
+	}
+	vs := p.CloseWindow(sysSample(base.Add(80*15*time.Second), 200000))
+	judged := false
+	for _, v := range vs {
+		if v.GroupKey == "cachey" {
+			judged = true
+			if v.Bucket != classify.CacheOrRetrievable {
+				t.Errorf("plateaued group judged %s, want cache_or_retrievable (basis %v)",
+					v.Bucket, v.Basis)
+			}
+		}
+	}
+	if !judged {
+		t.Fatal("plateaued group never re-judged — a stale leak verdict can never be corrected")
+	}
+}

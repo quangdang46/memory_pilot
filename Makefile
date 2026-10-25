@@ -10,6 +10,14 @@ build:
 test:
 	CGO_ENABLED=0 go test ./...
 
+# Race detector must run with cgo enabled (the detector needs it) and without
+# the pure-Go-only assumption. The daemon crashed with "concurrent map read
+# and map write" in production because the plain test target cannot see races.
+race:
+	go test -race ./...
+
+ci: vet test race gates build
+
 vet:
 	CGO_ENABLED=0 go vet ./...
 
