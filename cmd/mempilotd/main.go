@@ -301,13 +301,19 @@ func (h *daemonHandler) recommendRelief(s model.SystemSample, score float64) {
 	}
 	// One recommendation per cooldown. The condition changes slowly and the
 	// answer does not get more true by repeating it.
+	//
+	// The cooldown is claimed only when a recommendation is actually emitted.
+	// Claiming it up front spent the whole 20 minutes on a window with nothing
+	// to say: measured after the 00:17 restart, the daemon was at Warn for 55 s
+	// — with one second of process history, so no member could be eligible —
+	// and that empty window would have silenced the first one that had a name
+	// to offer.
 	h.mu.Lock()
-	if !h.lastReliefAt.IsZero() && s.At.Sub(h.lastReliefAt) < reliefCooldown {
-		h.mu.Unlock()
+	tooSoon := !h.lastReliefAt.IsZero() && s.At.Sub(h.lastReliefAt) < reliefCooldown
+	h.mu.Unlock()
+	if tooSoon {
 		return
 	}
-	h.lastReliefAt = s.At
-	h.mu.Unlock()
 
 	members := h.pipe.Attr.Members()
 	if len(members) == 0 {
@@ -347,6 +353,9 @@ func (h *daemonHandler) recommendRelief(s model.SystemSample, score float64) {
 	if viol := classify.PhraseTest(text); len(viol) > 0 {
 		text = "relief recommendation withheld by the phrase test"
 	}
+	h.mu.Lock()
+	h.lastReliefAt = s.At
+	h.mu.Unlock()
 	_ = h.lg.Append(map[string]any{"kind": "relief_recommendation", "at": s.At,
 		"severity": r.Severity, "shortfall_mb": shortfall >> 20,
 		"total_relief_mb": r.TotalRelief >> 20, "sufficient": r.Sufficient(),

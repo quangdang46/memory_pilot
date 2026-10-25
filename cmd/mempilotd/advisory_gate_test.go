@@ -11,6 +11,7 @@ import (
 	"memory_pilot/internal/classify"
 	"memory_pilot/internal/ledger"
 	"memory_pilot/internal/model"
+	"memory_pilot/internal/pipeline"
 )
 
 // advisoryTexts records verdicts through a real ledger in a temp dir and reads
@@ -94,4 +95,30 @@ func TestAdvisoryIsRateLimited(t *testing.T) {
 		t.Errorf("a group advised 5 minutes ago is due again (limit is %v)",
 			advisoryRepeatEvery)
 	}
+}
+
+// The relief cooldown is claimed only when a recommendation is emitted.
+// Measured after the 00:17 restart: the daemon was at Warn for 55 s with one
+// second of process history, so no member could be eligible — and that empty
+// window used up the 20-minute cooldown, silencing the first one that had a
+// name to offer.
+func TestReliefCooldownIsNotSpentOnAnEmptyWindow(t *testing.T) {
+	dir := t.TempDir()
+	lg, err := ledger.Open(dir, "ledger")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lg.Close()
+	h := &daemonHandler{lg: lg,
+		pipe: pipeline.New(pipeline.Config{WindowS: 300}, lg, nil, nil, nil)}
+	warn := model.SystemSample{KernelLevel: model.LevelWarn, At: time.Unix(1000, 0)}
+	// A fresh attributor has no series, so there is nothing to recommend.
+	h.recommendRelief(warn, 0.5)
+	if !h.lastReliefAt.IsZero() {
+		t.Errorf("an empty window claimed the cooldown at %v", h.lastReliefAt)
+	}
+	// And the next Warn sample is still allowed to try.
+	next := warn
+	next.At = warn.At.Add(5 * time.Second)
+	h.recommendRelief(next, 0.5)
 }
