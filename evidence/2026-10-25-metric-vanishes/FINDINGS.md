@@ -81,3 +81,36 @@ python3 rusage_probe.py        # which rusage fields retain the truth
 
 Memory Pilot measures a number that goes to zero under pressure, while the
 number that stays correct was already being collected and thrown away.
+
+---
+
+## 6. Correction: footprint does track growth; the earlier "stalls" reading was an artifact
+
+A follow-up measurement (child reports its own allocated total on stdout, so
+the ground truth does not depend on any kernel field) shows:
+
+| child reports | phys_footprint | ps rss |
+|---|---|---|
+| 25 MB | 36.8 MB | 44.8 MB |
+| 50 MB | 61.9 MB | 52.9 MB |
+| 75 MB | 87.1 MB | 24.7 MB |
+| 100 MB | 112.3 MB | 29.7 MB |
+| 125 MB | 137.5 MB | 24.7 MB |
+| 140 MB | 152.6 MB | 39.7 MB |
+
+`phys_footprint` follows the process's own allocation within ~12 MB
+(fixed overhead + allocator slack). `resident_size` — the field attribution
+uses — wanders between 24 and 53 MB and **bears almost no relation to how much
+memory the process holds**.
+
+An earlier probe of this directory reported footprint as "stalling" at
+162.7 MB while allocation continued. That probe pre-allocated the full payload
+in under two seconds and then idled; once a process stops allocating, footprint
+correctly stops changing, and no further growth existed to observe. The
+"stalls" reading was a contradiction in that probe's own setup, not a
+property of the metric. Section 1's headline table (a process that allocated
+everything up front, then held it) remains valid for what it measures — the
+collapse of `resident_size` — but it does not support "footprint fails too".
+
+**Corrected conclusion:** `phys_footprint` is the usable metric.
+`resident_size` is not, and it is the one the code uses.
