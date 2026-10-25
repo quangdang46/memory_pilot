@@ -92,3 +92,6 @@ interrupting anyone for.
 - `2026-10-25-run8/` — 4/5, the fix working
 - `2026-10-25-live-pressure/` — first live action results under pressure
 - `2026-10-25-fix-log.md` — every fix mapped to its commit and test
+- `2026-10-25-run12-NOTES.md` — a discarded run: the harness let the probes
+  inherit the terminal's group, so it measured nothing (not a product defect;
+  the grouping was correct)
