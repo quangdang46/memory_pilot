@@ -376,14 +376,18 @@ func (r *Recommendation) Text() string {
 		if len(r.Candidates) > MaxNamed {
 			s += fmt.Sprintf("  ... and %d more\n", len(r.Candidates)-MaxNamed)
 		}
-		s += fmt.Sprintf("closing all of them would return ~%d MB", total>>20)
+		// "Covers it" is a claim about relief, and relief from a process we
+		// have not verified as abandoned is a guess. The design says never to
+		// present one as the other, so this branch states the arithmetic and
+		// leaves the decision where it belongs.
+		s += fmt.Sprintf("closing all of them would return ~%d MB at most", total>>20)
 		if r.Shortfall > 0 {
 			if total >= r.Shortfall {
-				s += fmt.Sprintf("; the shortfall is %d MB — this covers it",
-					r.Shortfall>>20)
+				s += fmt.Sprintf("; the shortfall is %d MB, so that would cover it "+
+					"if they are truly abandoned", r.Shortfall>>20)
 			} else {
-				s += fmt.Sprintf("; the shortfall is %d MB — this will NOT cover it",
-					r.Shortfall>>20)
+				s += fmt.Sprintf("; the shortfall is %d MB — even closing all of "+
+					"them would NOT cover it", r.Shortfall>>20)
 			}
 		}
 		return s

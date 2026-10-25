@@ -277,7 +277,7 @@ func TestIdleProcessesAreNamedWithTheirRelief(t *testing.T) {
 		r.TotalRelief += c.ExpectedReliefBytes
 	}
 	txt := r.Text()
-	for _, want := range []string{"rust-analyzer", "2697", "covers it"} {
+	for _, want := range []string{"rust-analyzer", "2697", "would cover it"} {
 		if !strings.Contains(txt, want) {
 			t.Errorf("recommendation does not mention %q:\n%s", want, txt)
 		}
@@ -378,5 +378,21 @@ func TestRecommendationNamesOnlyTheFirstFew(t *testing.T) {
 	}
 	if !strings.Contains(txt, "closing 30 abandoned") {
 		t.Errorf("the count was truncated with the list:\n%s", txt)
+	}
+}
+
+// "Covers it" is a claim about relief. Relief from a process nobody has
+// verified as abandoned is an upper bound, and the design says never to
+// present one as the other.
+func TestUnverifiedReliefIsStatedAsAnUpperBound(t *testing.T) {
+	f := facts("big-idle", 3000, 20*time.Minute) // parent alive, not abandoned
+	c := Assess(f)
+	r := &Recommendation{Severity: "Warn", Shortfall: 2 << 30, Candidates: []Candidate{c}}
+	txt := r.Text()
+	if !strings.Contains(txt, "at most") {
+		t.Errorf("unverified relief stated as certain:\n%s", txt)
+	}
+	if strings.Contains(txt, "— this covers it") {
+		t.Errorf("unverified relief claims to cover the gap:\n%s", txt)
 	}
 }
