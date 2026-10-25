@@ -1,0 +1,9 @@
+probe           truth     expected                 verdictconf  at        result
+----------------------------------------------------------------------------
+probe-children  subprocesssubprocess_accumulation  -  -     -         SILENT
+probe-leak      leak      leak_suspicion           -  -     -         SILENT
+probe-plateau   cache     cache_or_retrievable     -  -     -         SILENT
+probe-sawtooth  cache     cache_or_retrievable     -  -     -         SILENT
+probe-workload  work      workload_growth          -  -     -         SILENT
+
+correct 0/5   wrong 0   silent 5   withheld 0
