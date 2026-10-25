@@ -220,9 +220,21 @@ func (a *Attributor) Observe(snap model.ProcessSnapshot, sys model.SystemSample)
 				}
 				delete(a.lastBytes, key)
 			}
-			a.seenIdentities[key] = true
 			s = &series{id: id, ppid: p.Identity.Ppid, alive: true}
 			a.series[key] = s
+			// A pre-existing member is part of the group's starting size from
+			// the moment it is first seen. Adding it here — once per identity —
+			// keeps the baseline independent of which sample caught which
+			// member, which a snapshot of the first total could not do: node's
+			// first window saw a fraction of its processes and every later one
+			// looked like +293 MB of growth.
+			firstEver := !a.seenIdentities[key]
+			a.seenIdentities[key] = true
+			wasHere := a.firstSnapAt.IsZero() ||
+				!time.Unix(id.StartSec, id.StartUsec*1000).After(a.firstSnapAt)
+			if firstEver && wasHere {
+				a.ensureHistory(snap.At, a.groupFor(id)).sizeAtStart += now
+			}
 		}
 		s.prevBytes = now
 		s.alive = true
@@ -330,7 +342,11 @@ func (a *Attributor) Observe(snap model.ProcessSnapshot, sys model.SystemSample)
 		}
 	}
 	for _, s := range a.series {
-		if s.alive && s.prevBytes > 0 {
+		// deadTicks < 2 means "not yet swept": the member is still part of the
+		// group even when this sample missed it. Using s.alive here made the
+		// total fall by the size of every hidden member and rise again when it
+		// reappeared — at 75% coverage that read as -1077 MB on a flat group.
+		if s.deadTicks < 2 && s.prevBytes > 0 {
 			tickBytes[a.groupFor(s.id)] += s.prevBytes
 		}
 	}
@@ -369,9 +385,8 @@ func (a *Attributor) Observe(snap model.ProcessSnapshot, sys model.SystemSample)
 		// overstatement, and an advisory repeating every window about a group
 		// that was flat. Recomputing from the total is immune to that.
 		if tot, ok := tickBytes[gid]; ok && tot > 0 {
-			if h.sizeAtStart == 0 {
-				h.sizeAtStart = tot
-			}
+			// sizeAtStart is filled during the scan above, so by here it
+			// already includes every member seen for the first time this tick.
 			h.netGrowthBytes = tot - h.sizeAtStart
 		}
 	}
@@ -902,6 +917,16 @@ func (a *Attributor) retireGoneGroups(alive map[string]int, now time.Time) {
 			delete(a.history, gid)
 		}
 	}
+}
+
+// ensureHistory returns the group's long-horizon record, creating it if needed.
+func (a *Attributor) ensureHistory(at time.Time, gid string) *history {
+	h := a.history[gid]
+	if h == nil {
+		h = &history{firstSeen: at}
+		a.history[gid] = h
+	}
+	return h
 }
 
 // footprintAt is the memory this process actually holds.
