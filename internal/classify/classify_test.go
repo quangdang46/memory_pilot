@@ -56,3 +56,39 @@ func TestZeroGrowthZeroReleaseIsNotCycling(t *testing.T) {
 		t.Errorf("idle group classified as cycling cache: %v", v.Basis)
 	}
 }
+
+// A normal app with many processes and modest growth is not accumulation.
+// Measured: the first version fired on zsh (0 MB), Chrome (12 MB) and node
+// (110 MB) in a single window, because "has many processes" is true of every
+// long-lived app.
+func TestNormalAppIsNotAccumulation(t *testing.T) {
+	cases := []struct {
+		name  string
+		stats SeriesStats
+	}{
+		{"chrome-idle", SeriesStats{GroupKey: "Google Chrome", GrowthBytes: 12 << 20,
+			ReleaseBytes: 40 << 20, PeakProcessCount: 13, ProcessCount: 13,
+			DurationS: 2400, CoverageRatio: 1, ActivityCorr: 0.1}},
+		{"zsh-no-growth", SeriesStats{GroupKey: "zsh", GrowthBytes: 0,
+			PeakProcessCount: 16, ProcessCount: 16, DurationS: 2400,
+			CoverageRatio: 1, ActivityCorr: 0.0}},
+	}
+	for _, c := range cases {
+		v := Classify(c.stats)
+		if v.Bucket == SubprocessAccumulation {
+			t.Errorf("%s classified as accumulation (growth %d MB): %v",
+				c.name, c.stats.GrowthBytes>>20, v.Basis)
+		}
+	}
+}
+
+// Real accumulation: many processes AND material growth, no CPU correlation.
+func TestRealAccumulationStillDetected(t *testing.T) {
+	v := Classify(SeriesStats{GroupKey: "probe-children", GrowthBytes: 500 << 20,
+		SlopeBytesS: 200e3, // SeriesFor supplies this from long-horizon growth
+		PeakProcessCount: 21, ProcessCount: 21, DurationS: 2400,
+		CoverageRatio: 1, ActivityCorr: 0.0})
+	if v.Bucket != SubprocessAccumulation {
+		t.Errorf("genuine accumulation missed: %s (%v)", v.Bucket, v.Basis)
+	}
+}

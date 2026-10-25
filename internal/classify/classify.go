@@ -21,7 +21,12 @@ const (
 	MinSuspectWindowS = 1200 // 20 min
 	MinCoverageRatio  = 0.3
 	MinCorrelation    = 0.5
-	MinProcessGrowth  = 8 // a group this many processes wide is accumulation, not one leak
+	// A group 8 processes wide can be accumulation — but only if it also
+	// grew. Every long-lived app has 10-40 processes; Chrome at 13 processes
+	// growing 12 MB is a browser doing its job. Measured after a first attempt
+	// fired on zsh (0 MB), Chrome (12 MB) and node (110 MB) in one window.
+	MinProcessGrowth     = 8
+	MinAccumulationBytes = 256 << 20
 )
 
 type SeriesStats struct {
@@ -98,8 +103,14 @@ func Classify(s SeriesStats) Verdict {
 	}
 
 	// subprocess accumulation — growth that arrives as more processes.
+	//
+	// Size matters here, not just count. Every long-lived app has 10-40
+	// processes; Chrome at 13 processes growing 12 MB is a browser doing its
+	// job, not accumulation. Measured after a first attempt fired on zsh
+	// (0 MB), Chrome (12 MB) and node (110 MB) in one window: the bucket was
+	// answering "does this app have many processes", which is always yes.
 	if s.PeakProcessCount >= MinProcessGrowth && s.ProcessCount > 0 &&
-		s.ActivityCorr < MinCorrelation {
+		s.GrowthBytes >= MinAccumulationBytes && s.ActivityCorr < MinCorrelation {
 		v.Bucket = SubprocessAccumulation
 		v.Basis = append(v.Basis,
 			fmt.Sprintf("process count reached %d (high-water) with growth not correlated to activity (corr %.2f)",
