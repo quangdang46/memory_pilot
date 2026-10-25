@@ -117,7 +117,7 @@ func TestNormalAppIsNotAccumulation(t *testing.T) {
 // Real accumulation: many processes AND material growth, no CPU correlation.
 func TestRealAccumulationStillDetected(t *testing.T) {
 	v := Classify(SeriesStats{GroupKey: "probe-children", GrowthBytes: 500 << 20,
-		SlopeBytesS: 200e3, // SeriesFor supplies this from long-horizon growth
+		SlopeBytesS:      200e3, // SeriesFor supplies this from long-horizon growth
 		PeakProcessCount: 21, ProcessCount: 21, DurationS: 2400,
 		CoverageRatio: 1, ActivityCorr: 0.0})
 	if v.Bucket != SubprocessAccumulation {
@@ -170,7 +170,10 @@ func TestAccumulationWithoutWindowGrowth(t *testing.T) {
 // long-lived idle process has. Production of the advisory is the failure, so
 // this test asserts on the bucket, not on the wording.
 func TestIdleProcessesAreNotLeakSuspects(t *testing.T) {
-	cases := []struct{ name string; mb int64 }{
+	cases := []struct {
+		name string
+		mb   int64
+	}{
 		{"zsh", 1}, {"extensionkitser", 0}, {"esbuild", 0}, {"bash", 7},
 	}
 	for _, c := range cases {

@@ -1,8 +1,9 @@
 // probe: a labelled memory workload for measuring Memory Pilot's verdicts.
 // Three shapes with known ground truth:
-//   leak     - steady growth, no CPU, no plateau          -> expect leak_suspicion
-//   plateau  - grows then stops and holds                  -> expect cache_or_retrievable
-//   workload - growth driven by real CPU work              -> expect workload_growth
+//
+//	leak     - steady growth, no CPU, no plateau          -> expect leak_suspicion
+//	plateau  - grows then stops and holds                  -> expect cache_or_retrievable
+//	workload - growth driven by real CPU work              -> expect workload_growth
 package main
 
 import (

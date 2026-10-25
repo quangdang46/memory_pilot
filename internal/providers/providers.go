@@ -10,15 +10,15 @@ import (
 )
 
 type Spec struct {
-	Kind         model.ActionKind
-	ID           string
-	EffectRange  [2]int64 // measured, never guessed (ADR-006 provider bar)
-	CanaryGated  bool
+	Kind        model.ActionKind
+	ID          string
+	EffectRange [2]int64 // measured, never guessed (ADR-006 provider bar)
+	CanaryGated bool
 }
 
 type Provider interface {
 	Spec() Spec
-	Check(ctx context.Context) error                    // preconditions; no side effects
+	Check(ctx context.Context) error // preconditions; no side effects
 	Apply(ctx context.Context, budget int64) (Applied, error)
 }
 
@@ -30,7 +30,9 @@ type Applied struct {
 // T1a: self-trim — the daemon releases its own caches.
 type TrimOwnBuffers struct{ CacheBytes *int64 }
 
-func (p TrimOwnBuffers) Spec() Spec { return Spec{Kind: model.ActionTrimOwnBuffers, ID: "t1-trim", EffectRange: [2]int64{8 << 20, 64 << 20}} }
+func (p TrimOwnBuffers) Spec() Spec {
+	return Spec{Kind: model.ActionTrimOwnBuffers, ID: "t1-trim", EffectRange: [2]int64{8 << 20, 64 << 20}}
+}
 func (p TrimOwnBuffers) Check(ctx context.Context) error { return nil }
 func (p TrimOwnBuffers) Apply(ctx context.Context, budget int64) (Applied, error) {
 	if p.CacheBytes == nil || *p.CacheBytes == 0 {
@@ -46,7 +48,9 @@ type RotateLedger interface{ Rotate() error }
 
 type RotateProvider struct{ L RotateLedger }
 
-func (p RotateProvider) Spec() Spec { return Spec{Kind: model.ActionRotateOwnLedger, ID: "t1-rotate", EffectRange: [2]int64{0, 0}} }
+func (p RotateProvider) Spec() Spec {
+	return Spec{Kind: model.ActionRotateOwnLedger, ID: "t1-rotate", EffectRange: [2]int64{0, 0}}
+}
 func (p RotateProvider) Check(ctx context.Context) error { return nil }
 func (p RotateProvider) Apply(ctx context.Context, budget int64) (Applied, error) {
 	return Applied{Note: "ledger rotated"}, p.L.Rotate()
@@ -56,7 +60,9 @@ func (p RotateProvider) Apply(ctx context.Context, budget int64) (Applied, error
 // memory; prevents new demand from arriving.
 type DeferLaunch struct{}
 
-func (DeferLaunch) Spec() Spec { return Spec{Kind: model.ActionDeferLaunch, ID: "t2-defer", EffectRange: [2]int64{0, 0}} }
+func (DeferLaunch) Spec() Spec {
+	return Spec{Kind: model.ActionDeferLaunch, ID: "t2-defer", EffectRange: [2]int64{0, 0}}
+}
 func (DeferLaunch) Check(ctx context.Context) error { return nil }
 func (DeferLaunch) Apply(ctx context.Context, budget int64) (Applied, error) {
 	return Applied{Note: "launch deferred until pressure clears"}, nil
@@ -73,7 +79,9 @@ type CooperativeRelease struct {
 	Adapters map[string]CooperativeAdapter // registered adapters only
 }
 
-func (p CooperativeRelease) Spec() Spec { return Spec{Kind: model.ActionEmitAdvisory, ID: "t4-coop", EffectRange: [2]int64{0, 0}, CanaryGated: true} }
+func (p CooperativeRelease) Spec() Spec {
+	return Spec{Kind: model.ActionEmitAdvisory, ID: "t4-coop", EffectRange: [2]int64{0, 0}, CanaryGated: true}
+}
 func (p CooperativeRelease) Check(ctx context.Context) error {
 	if len(p.Adapters) == 0 {
 		return fmt.Errorf("no registered adapter (T4 has no default adapter, ADR-014)")

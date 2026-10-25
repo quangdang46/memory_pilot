@@ -17,15 +17,15 @@ var start = time.Now()
 var addrSysctlbyname, addrHostStats, addrMachHostSelf uintptr
 
 type VmStats64 struct {
-	Free, Active, Inactive, Wire                uint32
-	ZeroFill, Reactivations, Pageins, Pageouts  uint64
-	Faults, CowFaults, Lookups, Hits            uint64
-	Purges                                      uint64
-	Purgeable, Speculative                      uint32
+	Free, Active, Inactive, Wire                    uint32
+	ZeroFill, Reactivations, Pageins, Pageouts      uint64
+	Faults, CowFaults, Lookups, Hits                uint64
+	Purges                                          uint64
+	Purgeable, Speculative                          uint32
 	Decompressions, Compressions, Swapins, Swapouts uint64
-	CompressorPage, Throttled                   uint32
-	External, Internal                          uint32
-	TotalUncompressedInCompressor               uint64
+	CompressorPage, Throttled                       uint32
+	External, Internal                              uint32
+	TotalUncompressedInCompressor                   uint64
 }
 
 func sysctlInt(name string) (int32, bool) {

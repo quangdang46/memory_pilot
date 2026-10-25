@@ -28,12 +28,12 @@ func ensureLoaded() {
 }
 
 type rusageV4 struct {
-	UUID       [16]byte
-	UserTime, SystemTime uint64
-	PkgIdleWkups, IntWkups uint64
-	Pageins, WiredSize uint64
+	UUID                        [16]byte
+	UserTime, SystemTime        uint64
+	PkgIdleWkups, IntWkups      uint64
+	Pageins, WiredSize          uint64
 	ResidentSize, PhysFootprint uint64
-	_          [21]uint64
+	_                           [21]uint64
 }
 
 func selfRSSBytes() uint64 {

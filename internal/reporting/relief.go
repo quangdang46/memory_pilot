@@ -11,13 +11,13 @@ import (
 // ReliefCandidate: three numbers — expected effect range, confidence, cost —
 // plus risk. Never collapsed into one score (ADR-006 §reporting).
 type ReliefCandidate struct {
-	Kind           string
-	EffectLowBytes int64
+	Kind            string
+	EffectLowBytes  int64
 	EffectHighBytes int64
-	Confidence     float64
-	CostCPUms      int64
-	RiskNote       string
-	Verified       bool // measurement-backed (ST-10)
+	Confidence      float64
+	CostCPUms       int64
+	RiskNote        string
+	Verified        bool // measurement-backed (ST-10)
 }
 
 func RenderRelief(c ReliefCandidate) string {
@@ -32,12 +32,12 @@ func RenderRelief(c ReliefCandidate) string {
 // OrphanCandidate: a process whose parent is gone, holding memory, with no
 // activity for the idle window. Recommend, never act (T3).
 type OrphanCandidate struct {
-	Pid           int32
-	Exe           string
-	ParentGone    bool
-	IdleS         int64
-	FootprintMB   int64
-	CoverageOK    bool
+	Pid         int32
+	Exe         string
+	ParentGone  bool
+	IdleS       int64
+	FootprintMB int64
+	CoverageOK  bool
 }
 
 func (o OrphanCandidate) Recommend(idleThresholdS int64) (string, bool) {
@@ -53,11 +53,11 @@ func (o OrphanCandidate) Recommend(idleThresholdS int64) (string, bool) {
 
 // SessionState: idle detection + resume awareness for coding-agent sessions.
 type SessionState struct {
-	GroupKey     string
-	CPUDeltaS    float64
-	LastActive   time.Time
-	Resumed      bool // saw activity after an idle period
-	FollowUpDue  bool // prior advisory unanswered
+	GroupKey    string
+	CPUDeltaS   float64
+	LastActive  time.Time
+	Resumed     bool // saw activity after an idle period
+	FollowUpDue bool // prior advisory unanswered
 }
 
 func (s SessionState) IdleFor(now time.Time) time.Duration { return now.Sub(s.LastActive) }

@@ -31,8 +31,8 @@ func TestCanary20InvocationsDevScaled(t *testing.T) {
 	for i := 0; i < 25; i++ {
 		s := model.SystemSample{
 			At: time.Now(), MonotonicMs: int64(i) * 20000, PageBytes: 16384,
-			FreePages: []uint64{60_000, 8_000, 8_000}[i%3],
-			CompressorPages: 400_000,
+			FreePages:        []uint64{60_000, 8_000, 8_000}[i%3],
+			CompressorPages:  400_000,
 			MachStatsQuality: model.QualGood, KernelLevelQuality: model.QualGood,
 			KernelLevel: []model.PressureLevel{model.LevelWarn, model.LevelCritical, model.LevelCritical}[i%3],
 		}

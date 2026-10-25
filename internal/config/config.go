@@ -11,12 +11,12 @@ import (
 
 // Defaults — single source; MP-REQ values cite these.
 type Defaults struct {
-	SystemSampleEvery time.Duration `json:"system_sample_every"` // 5s
+	SystemSampleEvery  time.Duration `json:"system_sample_every"`  // 5s
 	ProcessSampleEvery time.Duration `json:"process_sample_every"` // 15s
-	RotateBytes       int64         `json:"rotate_bytes"`
-	LedgerKeep        int           `json:"ledger_keep"`
-	IDLEMaxRSSMB      float64       `json:"idle_max_rss_mb"`  // 60 (budget)
-	IDLEMaxCPUPct     float64       `json:"idle_max_cpu_pct"` // 0.3
+	RotateBytes        int64         `json:"rotate_bytes"`
+	LedgerKeep         int           `json:"ledger_keep"`
+	IDLEMaxRSSMB       float64       `json:"idle_max_rss_mb"`  // 60 (budget)
+	IDLEMaxCPUPct      float64       `json:"idle_max_cpu_pct"` // 0.3
 }
 
 var defaults = Defaults{
@@ -31,9 +31,9 @@ var defaults = Defaults{
 func DefaultsForTests() Defaults { return defaults }
 
 type Config struct {
-	DataRoot string          `json:"data_root"`
-	Mode     string          `json:"mode"` // observe | enforce
-	Overrides Defaults        `json:"overrides"`
+	DataRoot  string   `json:"data_root"`
+	Mode      string   `json:"mode"` // observe | enforce
+	Overrides Defaults `json:"overrides"`
 }
 
 func DefaultConfig(dataRoot string) Config {

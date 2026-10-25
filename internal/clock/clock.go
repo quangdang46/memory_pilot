@@ -20,11 +20,11 @@ type real struct{}
 
 func Real() Clock { return real{} }
 
-func (real) Now() time.Time                       { return time.Now() }
-func (real) Monotonic() time.Duration             { return time.Since(processStart) }
-func (real) Since(t time.Time) time.Duration      { return time.Since(t) }
+func (real) Now() time.Time                         { return time.Now() }
+func (real) Monotonic() time.Duration               { return time.Since(processStart) }
+func (real) Since(t time.Time) time.Duration        { return time.Since(t) }
 func (real) After(d time.Duration) <-chan time.Time { return time.After(d) }
-func (real) NewTicker(d time.Duration) Ticker     { return realTicker{time.NewTicker(d)} }
+func (real) NewTicker(d time.Duration) Ticker       { return realTicker{time.NewTicker(d)} }
 
 var processStart = time.Now()
 
@@ -44,8 +44,8 @@ func NewFake(start time.Time) *Fake {
 	return &Fake{now: start, ticks: map[time.Duration]*fakeTicker{}}
 }
 
-func (f *Fake) Now() time.Time  { return f.now }
-func (f *Fake) Monotonic() time.Duration { return f.mono }
+func (f *Fake) Now() time.Time                  { return f.now }
+func (f *Fake) Monotonic() time.Duration        { return f.mono }
 func (f *Fake) Since(t time.Time) time.Duration { return f.now.Sub(t) }
 func (f *Fake) After(d time.Duration) <-chan time.Time {
 	ch := make(chan time.Time, 1)

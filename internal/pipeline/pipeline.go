@@ -220,10 +220,17 @@ func (p *Pipeline) CloseWindow(sys model.SystemSample) []classify.Verdict {
 					"plateau_s": st.PlateauS, "duration_s": st.DurationS,
 					"quiet_s": st.QuietS, "active_s": st.ActivityS,
 					"activity_corr": st.ActivityCorr,
-					"growth_bytes": st.GrowthBytes, "release_bytes": st.ReleaseBytes,
-					"process_count": st.ProcessCount,
-					"peak_processes": st.PeakProcessCount,
-					"slope_bps":      st.SlopeBytesS,
+					"growth_bytes":  st.GrowthBytes, "release_bytes": st.ReleaseBytes,
+					// The long-horizon pair the accumulation and cycling
+					// branches actually decide on. Leaving them out made a
+					// verdict impossible to check from its own record: a
+					// subprocess advisory showed 134 MB of window growth
+					// against a 256 MB threshold and looked like a bug.
+					"long_growth_bytes":   st.LongGrowthBytes,
+					"long_peak_processes": st.LongPeakProcesses,
+					"process_count":       st.ProcessCount,
+					"peak_processes":      st.PeakProcessCount,
+					"slope_bps":           st.SlopeBytesS,
 				},
 				"text": classify.RenderVerdict(v, g.GrowthBytes>>20),
 			})

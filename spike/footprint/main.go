@@ -33,12 +33,12 @@ type taskInfo struct {
 
 // rusage_info_v4 per <sys/resource.h>
 type rusageV4 struct {
-	UUID                     [16]byte
-	UserTime, SystemTime     uint64
-	PkgIdleWkups, IntWkups   uint64
-	Pageins, WiredSize       uint64
+	UUID                        [16]byte
+	UserTime, SystemTime        uint64
+	PkgIdleWkups, IntWkups      uint64
+	Pageins, WiredSize          uint64
 	ResidentSize, PhysFootprint uint64
-	ProcStart, ProcExit      uint64
+	ProcStart, ProcExit         uint64
 	// ... remaining fields unused; buffer is 60 uint64s
 	_ [34]uint64
 }

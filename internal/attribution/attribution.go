@@ -595,15 +595,15 @@ type SeriesStats struct {
 	DurationS     int64
 	CoverageRatio float64
 
-	GrowthBytes      int64
-	ReleaseBytes     int64
+	GrowthBytes  int64
+	ReleaseBytes int64
 	// LongGrowthBytes and LongPeakProcesses cover the same horizon as
 	// ReleaseBytes: the whole time the group has been watched. Comparing a
 	// window's growth against a lifetime's release is not a comparison.
-	LongGrowthBytes  int64
+	LongGrowthBytes   int64
 	LongPeakProcesses int
-	ProcessCount     int
-	PeakProcessCount int
+	ProcessCount      int
+	PeakProcessCount  int
 }
 
 // groupFor: nearest-anchor with sticky membership (§4).

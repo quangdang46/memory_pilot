@@ -14,8 +14,8 @@ import (
 )
 
 type Budget struct {
-	MaxRSSMB   float64
-	MaxCPUPct  float64
+	MaxRSSMB    float64
+	MaxCPUPct   float64
 	SampleEvery time.Duration
 	// SI-6: shrinks monotonically with pressure escalation.
 	Detail string // full | reduced | minimal
@@ -68,7 +68,7 @@ func (m *Monitor) Degrade(detail string) {
 	}
 }
 
-func (m *Monitor) Healthy() bool { return m.healthy.Load() }
+func (m *Monitor) Healthy() bool     { return m.healthy.Load() }
 func (m *Monitor) SetHealthy(h bool) { m.healthy.Store(h) }
 
 // Sample records self-usage; called once per tick from the supervisor.
@@ -80,11 +80,11 @@ func (m *Monitor) Sample(ledgerBytes int64) {
 }
 
 type SelfSnapshot struct {
-	RSSMB       float64
-	Goroutines  int
-	LedgerMB    float64
-	CPUPct      float64
-	Budget      Budget
+	RSSMB      float64
+	Goroutines int
+	LedgerMB   float64
+	CPUPct     float64
+	Budget     Budget
 }
 
 func (m *Monitor) Snapshot() SelfSnapshot {

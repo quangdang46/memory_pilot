@@ -4,23 +4,23 @@ package replay
 
 import (
 	"crypto/sha256"
-	"math"
 	"encoding/json"
 	"fmt"
+	"math"
 
 	"memory_pilot/internal/forecast"
-	"memory_pilot/internal/pressure"
 	"memory_pilot/internal/model"
+	"memory_pilot/internal/pressure"
 )
 
 type TraceSample struct {
-	MonotonicMs   int64   `json:"mono_ms"`
-	FreeBytes     float64 `json:"free_bytes"`
-	CompressorPg  float64 `json:"compressor_pages"`
-	SwapUsed      float64 `json:"swap_used"`
-	KernelLevel   int     `json:"kernel_level"` // 0=unavailable
-	TotalPages    uint64  `json:"total_pages"`
-	PageBytes     uint64  `json:"page_bytes"`
+	MonotonicMs  int64   `json:"mono_ms"`
+	FreeBytes    float64 `json:"free_bytes"`
+	CompressorPg float64 `json:"compressor_pages"`
+	SwapUsed     float64 `json:"swap_used"`
+	KernelLevel  int     `json:"kernel_level"` // 0=unavailable
+	TotalPages   uint64  `json:"total_pages"`
+	PageBytes    uint64  `json:"page_bytes"`
 }
 
 type Trace struct {
@@ -32,16 +32,16 @@ type Trace struct {
 }
 
 type ReplayRow struct {
-	MonoMS    int64           `json:"mono_ms"`
-	State     string          `json:"state"`
-	Provenance string         `json:"provenance"`
-	Score     float64         `json:"score"`
-	Rate      float64         `json:"rate"`
-	TteS      float64         `json:"tte_s"`
-	LowerS    float64         `json:"lower_s"`
-	Conf      float64         `json:"conf"`
-	Burst     bool            `json:"burst"`
-	Actionable bool           `json:"actionable"`
+	MonoMS     int64   `json:"mono_ms"`
+	State      string  `json:"state"`
+	Provenance string  `json:"provenance"`
+	Score      float64 `json:"score"`
+	Rate       float64 `json:"rate"`
+	TteS       float64 `json:"tte_s"`
+	LowerS     float64 `json:"lower_s"`
+	Conf       float64 `json:"conf"`
+	Burst      bool    `json:"burst"`
+	Actionable bool    `json:"actionable"`
 }
 
 // Run replays a trace and returns rows plus a content hash. Determinism: the
@@ -74,10 +74,10 @@ func round6(f float64) float64 {
 func toEstimatorInput(s TraceSample) pressure.Input {
 	lvl := modelLevel(s.KernelLevel)
 	in := pressure.Input{
-		TotalPages: s.TotalPages,
-		SwapOK:     s.SwapUsed > 0,
+		TotalPages:    s.TotalPages,
+		SwapOK:        s.SwapUsed > 0,
 		SwapUsedBytes: uint64(s.SwapUsed),
-		DiskOK:     false,
+		DiskOK:        false,
 	}
 	in.Sample.PageBytes = s.PageBytes
 	in.Sample.FreePages = uint64(s.FreeBytes / float64(s.PageBytes))

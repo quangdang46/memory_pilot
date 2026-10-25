@@ -7,12 +7,12 @@ import "testing"
 // This is the warning board the owner complained about; it must stay silent.
 func TestObservedFalseAdvisoriesStaySilent(t *testing.T) {
 	type obs struct {
-		name    string
-		growth  int64 // bytes, whole life
-		peak    int
-		quiet   int64
-		dur     int64
-		corr    float64
+		name   string
+		growth int64 // bytes, whole life
+		peak   int
+		quiet  int64
+		dur    int64
+		corr   float64
 	}
 	cases := []obs{
 		{"Google Chrome", 13 << 20, 19, 1784, 2400, 0.0},

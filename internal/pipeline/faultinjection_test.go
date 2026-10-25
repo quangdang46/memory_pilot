@@ -25,7 +25,7 @@ func TestFI1CollectorFailure(t *testing.T) {
 func TestFI2KernelLevelDead(t *testing.T) {
 	est := pressure.New()
 	out := est.Update(pressure.Input{
-		Sample: model.SystemSample{MachStatsQuality: model.QualGood, PageBytes: 16384, FreePages: 300_000},
+		Sample:     model.SystemSample{MachStatsQuality: model.QualGood, PageBytes: 16384, FreePages: 300_000},
 		TotalPages: 1_000_000, SwapOK: true, SwapUsedBytes: 1e9})
 	if out.Provenance != "derived" {
 		t.Fatalf("FI-2: provenance %s", out.Provenance)

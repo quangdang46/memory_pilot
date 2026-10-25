@@ -16,10 +16,16 @@ test:
 race:
 	go test -race ./...
 
-ci: vet test race gates build
+ci: fmt vet test race gates build
 
 vet:
 	CGO_ENABLED=0 go vet ./...
+
+# Formatting was unchecked, and 15 files had drifted out of gofmt — including
+# three in internal/ that the CI target compiled and tested happily.
+fmt:
+	@test -z "$$(gofmt -l . 2>/dev/null | grep -v '^\.tmp')" || \
+		{ echo "gofmt needed:"; gofmt -l . 2>/dev/null | grep -v '^\.tmp'; exit 1; }
 
 gates:
 	@scripts/gates/st1_no_signal_capability.sh
