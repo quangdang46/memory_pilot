@@ -96,7 +96,7 @@ func status(args []string) {
 		return
 	}
 	fmt.Println("\ntop movers (last window)")
-	printGroups(d.Groups)
+	printGroups(d.Groups, hasFlag(args, "--all"))
 }
 
 // report answers the question the product exists to answer: what grew, by
@@ -133,7 +133,12 @@ func report(args []string) {
 				latestAttr = r
 			}
 		case "classification":
-			if latestVerdict == nil {
+			// Newest window wins, then the most notable bucket in it. Taking
+			// the first record made the summary line arbitrary: the ledger
+			// happened to order a group that grew 0 MB first, so `report`
+			// ended with "group intelligenceflo grew by 0 MB — insufficient
+			// evidence", which is true, useless, and reads like a fault.
+			if latestVerdict == nil || notable(r) > notable(latestVerdict) {
 				latestVerdict = r
 			}
 		case "advisory":
@@ -170,7 +175,7 @@ func report(args []string) {
 				Processes: int(int64Of(m["processes"])), TopExe: strOf(m["top_exe"]),
 				PeakBps: floatOf(m["peak_bps"])})
 		}
-		printGroups(out)
+		printGroups(out, hasFlag(args, "--all"))
 	} else {
 		fmt.Println("  no group grew beyond the reporting floor in this window")
 	}
@@ -181,7 +186,7 @@ func report(args []string) {
 	if note := strOf(latestAttr["note"]); note != "" {
 		fmt.Println(note)
 	}
-	if latestVerdict != nil {
+	if latestVerdict != nil && notable(latestVerdict) > 0 {
 		fmt.Printf("\nclassification: %s\n", strOf(latestVerdict["text"]))
 	}
 	if len(advisories) > 0 {
@@ -192,8 +197,39 @@ func report(args []string) {
 	}
 }
 
-func printGroups(gs []group) {
+// notable ranks a verdict for the one-line summary. "Insufficient evidence"
+// is the honest answer for most groups and the least worth printing.
+func notable(r map[string]any) int {
+	switch strOf(r["bucket"]) {
+	case "leak_suspicion":
+		return 4
+	case "subprocess_accumulation":
+		return 3
+	case "workload_growth":
+		return 2
+	case "cache_or_retrievable":
+		return 1
+	}
+	return 0
+}
+
+// reportFloorMB is how much a group must have grown to get its own line.
+// Measured on the owner's machine at 4 minutes into a normal working day: 186
+// groups "grew" in one window, 193 lines of output, most of them 0-3 MB of
+// page noise. That list is the warning board — nothing in it is a decision,
+// and a reader who scrolls past it learns to scroll past all of it. The floor
+// hides nothing: the remainder is counted and summed in the last line, and
+// --all prints every group.
+const reportFloorMB = 64
+
+func printGroups(gs []group, all bool) {
+	shown, hidden, hiddenMB := 0, 0, int64(0)
 	for _, g := range gs {
+		if !all && g.GrowthMB < reportFloorMB {
+			hidden++
+			hiddenMB += g.GrowthMB
+			continue
+		}
 		name := g.ID
 		if name == "" {
 			name = g.TopExe
@@ -203,6 +239,14 @@ func printGroups(gs []group) {
 			top = "  top: " + g.TopExe
 		}
 		fmt.Printf("  +%6d MB  %-22s %2d procs%s\n", g.GrowthMB, name, g.Processes, top)
+		shown++
+	}
+	if hidden > 0 {
+		fmt.Printf("  %d other group(s) grew less than %d MB each, %d MB in total "+
+			"(`report --all` lists them)\n", hidden, reportFloorMB, hiddenMB)
+	}
+	if shown == 0 && hidden == 0 {
+		fmt.Println("  no group grew beyond the reporting floor in this window")
 	}
 }
 
