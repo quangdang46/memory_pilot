@@ -2,17 +2,24 @@
 
 **A macOS daemon that prevents memory exhaustion for long-running coding-agent workloads — without ever killing your work.**
 
-> Status: **implementation, phases 0–5 built and wired into the live daemon.**
-> Phase 0 spikes measured on the target Mac mini M4 (G-P0 closed). The
-> collector → estimator → forecast → attribution → classification → policy →
-> planner → executor → verification chain runs on every tick and writes a
-> record at each step; `mp run` spawns and registers managed workloads;
-> `service install` keeps the daemon running across logins. ST-1..ST-24 green
-> (G-P1..G-P5 recorded; see `execution-records/`). A 2026-10-25 repair closed
-> the gap between "the modules exist" and "the daemon uses them" — see
-> [`execution-records/2026-10-25-live-wiring-repair.md`](execution-records/2026-10-25-live-wiring-repair.md).
-> Remaining are calendar-bound validations (full-duration 24h run, 72h soak,
-> 7-day baseline, L2 canary with real workloads) and the owner freeze. The
+> Status: **working, measured, and honest about what is not proven.**
+>
+> On 2026-10-25 an evidence-first pass replaced guessing: labelled workloads
+> with fixed ground truth, measurements taken independently of the daemon's
+> own numbers, and nine defects fixed only after the data showed them. Four of
+> five labelled shapes now classify correctly (0/5 before); the full chain
+> produced its first live action results under real pressure.
+>
+> Still unproven, and stated as such:
+> - **Critical pressure** was never reached on the target machine (level 2 of
+>   4), so the Critical-only paths — T1 self-relief and L2 managed stop — have
+>   never executed against a live daemon. They are covered by tests against
+>   real processes instead.
+> - **Thresholds are chosen, not fitted.** No false-positive corpus exists.
+> - **Long-run soak** (72 h) is still calendar-bound.
+>
+> Evidence: [`evidence/`](evidence/FINAL-STATUS.md). Fix log:
+> [`evidence/2026-10-25-fix-log.md`](evidence/2026-10-25-fix-log.md). The
 > specification set lives in [`docs/`](docs/README.md).
 
 ---
