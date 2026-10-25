@@ -147,8 +147,20 @@ func report(args []string) {
 		fmt.Println("(the daemon reports each 5-minute window; check `mempilot status`)")
 		return
 	}
-	fmt.Printf("window %ds | accounted %v MB | system headroom fell %v MB | compressor %v MB\n\n",
-		int64Of(latestAttr["window_s"]), latestAttr["accounted_mb"],
+	// State how old the window is. After a daemon restart the ledger's newest
+	// attribution can be many minutes old, and a report that presents it as
+	// current is the same class of lie as a verdict without its basis: the
+	// numbers are right, the implied "now" is not.
+	age := ""
+	if at := strOf(latestAttr["at"]); at != "" {
+		if ts, err := time.Parse(time.RFC3339Nano, at); err == nil {
+			if d := time.Since(ts).Round(time.Minute); d >= 2*time.Minute {
+				age = fmt.Sprintf(" | %s ago", d)
+			}
+		}
+	}
+	fmt.Printf("window %ds%s | accounted %v MB | system headroom fell %v MB | compressor %v MB\n\n",
+		int64Of(latestAttr["window_s"]), age, latestAttr["accounted_mb"],
 		latestAttr["observed_mb"], latestAttr["compressor_mb"])
 	if gs, ok := latestAttr["groups"].([]any); ok && len(gs) > 0 {
 		var out []group
