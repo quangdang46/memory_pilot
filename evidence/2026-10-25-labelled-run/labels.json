@@ -1,0 +1,5 @@
+{
+  "probe-leak":     {"truth": "leak",     "expect": "leak_suspicion",       "why": "steady growth, no CPU, no plateau"},
+  "probe-plateau":  {"truth": "cache",    "expect": "cache_or_retrievable", "why": "grows 80s then holds flat"},
+  "probe-workload": {"truth": "work",     "expect": "workload_growth",      "why": "growth accompanied by CPU work"}
+}

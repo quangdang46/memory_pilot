@@ -1,0 +1,14 @@
+utc	probe-leak_rss	probe-plateau_rss	probe-workload_rss	verdicts
+00:32:21	128320	103840	109888	probe-leak=unknown probe-leak=unknown probe-plateau=leak_suspicion
+00:33:22	15536	14336	14080	probe-leak=unknown probe-leak=unknown probe-plateau=leak_suspicion
+00:34:22	47104	6080	44816	probe-leak=unknown probe-leak=unknown probe-plateau=leak_suspicion
+00:35:22	84544	6080	75664	probe-plateau=leak_suspicion probe-leak=leak_suspicion probe-workload=workload_growth
+00:36:22	121456	6128	106416	probe-plateau=leak_suspicion probe-leak=leak_suspicion probe-workload=workload_growth
+00:37:22	158400	6128	137296	probe-plateau=leak_suspicion probe-leak=leak_suspicion probe-workload=workload_growth
+00:38:22	195344	6240	168080	probe-plateau=leak_suspicion probe-leak=leak_suspicion probe-workload=workload_growth
+00:39:22	232288	6240	198848	probe-plateau=leak_suspicion probe-leak=leak_suspicion probe-workload=workload_growth
+00:40:23	269200	6240	229632	probe-workload=workload_growth probe-leak=leak_suspicion probe-workload=workload_growth
+00:41:23	306112	6240	260400	probe-workload=workload_growth probe-leak=leak_suspicion probe-workload=workload_growth
+00:42:23	343056	6240	291152	probe-workload=workload_growth probe-leak=leak_suspicion probe-workload=workload_growth
+00:43:23	380000	6240	321920	probe-workload=workload_growth probe-leak=leak_suspicion probe-workload=workload_growth
+00:44:23	416896	6240	352688	probe-workload=workload_growth probe-leak=leak_suspicion probe-workload=workload_growth
