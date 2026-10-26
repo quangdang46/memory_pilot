@@ -139,3 +139,49 @@ func TestReliefCooldownFitsInsideAWarnEpisode(t *testing.T) {
 			"has not finished reading", reliefCooldown)
 	}
 }
+
+// An advisory must carry the pressure it was emitted at. Without it, "was that
+// at Warn or at Normal?" needs a timestamp join against system samples, and the
+// answer is only as good as whichever samples happen to bracket it.
+func TestAdvisoryRecordsItsPressure(t *testing.T) {
+	dir := t.TempDir()
+	lg, err := ledger.Open(dir, "ledger")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lg.Close()
+	h := &daemonHandler{lg: lg, lastAdvisory: map[string]time.Time{}}
+	s := model.SystemSample{At: time.Unix(1793000000, 0), PageBytes: 16384,
+		FreePages: 4000, KernelLevel: model.LevelWarn}
+	vs := []classify.Verdict{{GroupKey: "leftover", Bucket: classify.LeakSuspicion,
+		Confidence: 0.65, Basis: []string{"sustained 1260s"}, GrowthMB: 900}}
+	h.recordVerdicts(s, vs, nil)
+
+	entries, _ := os.ReadDir(dir)
+	var found bool
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".jsonl") {
+			continue
+		}
+		b, _ := os.ReadFile(filepath.Join(dir, e.Name()))
+		for _, line := range strings.Split(string(b), "\n") {
+			if strings.TrimSpace(line) == "" {
+				continue
+			}
+			var m map[string]any
+			if json.Unmarshal([]byte(line), &m) != nil || m["kind"] != "advisory" {
+				continue
+			}
+			found = true
+			if lvl, ok := m["kernel_level"].(float64); !ok || int(lvl) != int(model.LevelWarn) {
+				t.Errorf("advisory kernel_level = %v, want %d", m["kernel_level"], model.LevelWarn)
+			}
+			if _, ok := m["free_mb"]; !ok {
+				t.Error("advisory does not record free memory")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("no advisory was written — the test did not exercise the path")
+	}
+}

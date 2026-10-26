@@ -502,7 +502,15 @@ func (h *daemonHandler) recordVerdicts(s model.SystemSample, vs []classify.Verdi
 			// SI-5 guard: never let a conclusion slip into report text.
 			text = "group " + v.GroupKey + " growth recorded; wording suppressed by the phrase test"
 		}
+		// Record the pressure this was emitted at. Without it every later
+		// question — "was that advisory at Warn or at Normal?", "did the gate
+		// open?" — needs a timestamp join against the system samples, and the
+		// answer is only as good as the samples that happen to bracket it.
+		// Measured: four advisories had to be attributed to Warn by matching
+		// them to samples within 5 s, and that is not evidence a reader can
+		// check from the record itself.
 		_ = h.lg.Append(map[string]any{"kind": "advisory", "at": s.At,
+			"kernel_level": int(s.KernelLevel), "free_mb": (s.FreePages * s.PageBytes) >> 20,
 			"strength": strength, "text": text,
 			"group": v.GroupKey, "bucket": v.Bucket, "confidence": v.Confidence})
 		h.markAdvised(v.GroupKey, s.At)
