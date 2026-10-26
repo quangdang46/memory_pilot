@@ -47,6 +47,13 @@ type Candidate struct {
 	// of proof is on moving away from it.
 	State string
 
+	// Pid is the process this candidate names, so the recommendation can say
+	// what to do about it. The daemon does not signal anything itself: ST-1
+	// permits one audited call site and it is reserved for workloads the daemon
+	// spawned. Naming the pid and the command is the difference between a
+	// finding and an instruction.
+	Pid int32
+
 	// SilentFor is the quiet period the claim rests on, when the claim rests on
 	// the quiet clock. Zero means it rests on lifetime CPU instead. The
 	// recommendation prints it: "quiet for a while" hides the number that
@@ -366,6 +373,7 @@ func AssessMembers(f GroupFacts) []Candidate {
 			continue // never name a process whose loss breaks the session
 		}
 		c := Candidate{
+			Pid:              m.Pid,
 			Group:            fmt.Sprintf("%s (pid %d)", m.Exe, m.Pid),
 			InterruptionRisk: 0.8,
 			State:            StateSuspicious,
@@ -548,6 +556,9 @@ func (r *Recommendation) Text() string {
 		} else {
 			s += fmt.Sprintf("\n  %s: %d MB, idle by its own CPU record, parent gone",
 				c.Group, c.FootprintMB())
+		}
+		if c.Pid > 1 {
+			s += fmt.Sprintf("\n      to release: kill %d", c.Pid)
 		}
 	}
 	if named > len(abandoned) {

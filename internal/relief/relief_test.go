@@ -669,3 +669,25 @@ func TestLifetimeClaimDoesNotInventAQuietPeriod(t *testing.T) {
 		t.Errorf("quoted a 30 s window as the basis:\n%s", r.Text())
 	}
 }
+
+// A finding the owner cannot act on is not a recommendation. The daemon does
+// not signal anything (ST-1: one audited call site, reserved for workloads it
+// spawned), so the sentence has to carry the pid and the command, or the reader
+// is left to run `ps` and work it out.
+func TestAbandonedCandidateSaysWhatToDo(t *testing.T) {
+	f := GroupFacts{ObservedFor: 24 * time.Hour, Members: []Member{
+		{Pid: 64747, Exe: "/opt/node/bin/node", Footprint: 120 << 20,
+			QuietFor: 22 * time.Hour, ParentGone: true},
+	}}
+	cs := AssessMembers(f)
+	if len(cs) != 1 {
+		t.Fatalf("%d candidates, want 1", len(cs))
+	}
+	r := &Recommendation{Severity: "Warn", Shortfall: 1 << 30, Candidates: cs}
+	for _, c := range cs {
+		r.TotalRelief += c.ExpectedReliefBytes
+	}
+	if txt := r.Text(); !strings.Contains(txt, "kill 64747") {
+		t.Errorf("no actionable command in:\n%s", txt)
+	}
+}
