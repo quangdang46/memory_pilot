@@ -155,6 +155,23 @@ func Classify(s SeriesStats) Verdict {
 	if accPeak < s.LongPeakProcesses {
 		accPeak = s.LongPeakProcesses
 	}
+	// A group cannot have added more than its own lifetime growth by very much.
+	// NetGrowthBytes is an extrapolation from a fitted slope; when the fit is
+	// corrupted (measured: a coverage flip between 1 and 12 visible members) it
+	// reports numbers the machine cannot contain — 3864 MB for a group whose
+	// whole life grew 16 MB, 3271 MB for one that grew 9 MB.
+	//
+	// The attribution fix stops those numbers being produced. This is the second
+	// line: a classifier that is handed an impossible figure must refuse it
+	// rather than act on it. Ten times lifetime growth is generous — a real
+	// accumulation trend extrapolates at roughly its own rate — and it still
+	// rejects every corruption observed today by two orders of magnitude.
+	if s.LongGrowthBytes > 0 && accGrow > 10*s.LongGrowthBytes {
+		v.Basis = append(v.Basis,
+			fmt.Sprintf("net growth %d MB exceeds ten times lifetime growth %d MB — not credible",
+				accGrow>>20, s.LongGrowthBytes>>20))
+		accGrow = 0
+	}
 	if accPeak >= MinProcessGrowth && s.ProcessCount > 0 &&
 		accGrow >= MinAccumulationBytes && s.ActivityCorr < MinCorrelation {
 		v.Bucket = SubprocessAccumulation
