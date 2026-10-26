@@ -530,12 +530,15 @@ func (h *daemonHandler) recordVerdicts(s model.SystemSample, vs []classify.Verdi
 		case classify.LeakSuspicion, classify.SubprocessAccumulation:
 			// worth surfacing
 		case classify.WorkloadGrowth:
-			// only if it is large enough to matter
-			if v.GrowthMB < advisoryWorkloadMB {
-				suppressed = append(suppressed, suppressedWhy(v, fmt.Sprintf(
-					"workload growth %d MB below the %d MB floor", v.GrowthMB, advisoryWorkloadMB)))
-				continue
-			}
+			// Never. Growth that co-moves with CPU work is the machine doing
+			// what it was asked to do; announcing it is the warning board the
+			// owner reported. A size floor here looked reasonable but was dead
+			// code — ShouldRecommend rejects the bucket before it is reached —
+			// and the owner chose to keep it that way: a 3 GB dev server at Warn
+			// is a cost they accepted, not a decision they can act on.
+			suppressed = append(suppressed, suppressedWhy(v,
+				"workload growth: the cost of work, not a decision"))
+			continue
 		default:
 			suppressed = append(suppressed, suppressedWhy(v, "bucket is not advisory-shaped"))
 			continue
@@ -592,10 +595,6 @@ func (h *daemonHandler) recordVerdicts(s model.SystemSample, vs []classify.Verdi
 			"state": ar.State, "evidence": ar.Evidence})
 	}
 }
-
-// advisoryWorkloadMB is the size above which explained growth is still worth
-// one line. Below it the verdict stays in the ledger only.
-const advisoryWorkloadMB = 2048
 
 // advisoryRepeatEvery bounds how often the same group can be announced. An
 // advisory is a request for the owner's attention; repeating it every window

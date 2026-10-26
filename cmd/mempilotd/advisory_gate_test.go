@@ -422,3 +422,72 @@ func TestEveryVerdictRecordsItsOutcome(t *testing.T) {
 		t.Errorf("only %d distinct reasons across three different verdicts: %v", len(seen), seen)
 	}
 }
+
+// The complete decision table. Every combination of bucket, pressure and size
+// must land on "announced" or on one of the four legitimate reasons — never on
+// an unexplained silence, and never announcing something that is not news.
+func TestSuppressionTableIsComplete(t *testing.T) {
+	type row struct {
+		name    string
+		v       classify.Verdict
+		level   model.PressureLevel
+		wantAdv bool
+	}
+	rows := []row{
+		// The shapes that must be announced.
+		{"leak at Warn", classify.Verdict{GroupKey: "a", Bucket: classify.LeakSuspicion, GrowthMB: 500}, model.LevelWarn, true},
+		{"leak at Critical", classify.Verdict{GroupKey: "a", Bucket: classify.LeakSuspicion, GrowthMB: 500}, model.LevelCritical, true},
+		{"leak at Normal", classify.Verdict{GroupKey: "a", Bucket: classify.LeakSuspicion, GrowthMB: 500}, model.LevelNormal, false},
+		{"accumulation at Warn", classify.Verdict{GroupKey: "a", Bucket: classify.SubprocessAccumulation, GrowthMB: 400}, model.LevelWarn, true},
+		{"accumulation at Normal", classify.Verdict{GroupKey: "a", Bucket: classify.SubprocessAccumulation, GrowthMB: 400}, model.LevelNormal, false},
+		// The owner's decision: a large working workload is a cost they
+		// accepted, at any pressure.
+		{"big workload at Warn", classify.Verdict{GroupKey: "a", Bucket: classify.WorkloadGrowth, GrowthMB: 3000}, model.LevelWarn, false},
+		{"big workload at Critical", classify.Verdict{GroupKey: "a", Bucket: classify.WorkloadGrowth, GrowthMB: 3000}, model.LevelCritical, false},
+		{"small workload at Warn", classify.Verdict{GroupKey: "a", Bucket: classify.WorkloadGrowth, GrowthMB: 100}, model.LevelWarn, false},
+		// Not news, at any pressure.
+		{"cache at Critical", classify.Verdict{GroupKey: "a", Bucket: classify.CacheOrRetrievable, GrowthMB: 900}, model.LevelCritical, false},
+		{"unknown at Critical", classify.Verdict{GroupKey: "a", Bucket: classify.Unknown, GrowthMB: 900}, model.LevelCritical, false},
+		// Terminal exemption applies whatever the shape.
+		{"terminal leak at Critical", classify.Verdict{GroupKey: "wezterm-gui", Bucket: classify.LeakSuspicion, GrowthMB: 900}, model.LevelCritical, false},
+	}
+	for _, r := range rows {
+		dir := t.TempDir()
+		lg, err := ledger.Open(dir, "ledger")
+		if err != nil {
+			t.Fatal(err)
+		}
+		h := &daemonHandler{lg: lg, lastAdvisory: map[string]time.Time{}}
+		s := model.SystemSample{At: time.Unix(1793000000, 0), PageBytes: 16384,
+			FreePages: 4000, KernelLevel: r.level}
+		h.recordVerdicts(s, []classify.Verdict{r.v}, nil)
+
+		var announced, decided int
+		entries, _ := os.ReadDir(dir)
+		for _, e := range entries {
+			if !strings.HasSuffix(e.Name(), ".jsonl") {
+				continue
+			}
+			b, _ := os.ReadFile(filepath.Join(dir, e.Name()))
+			for _, line := range strings.Split(string(b), "\n") {
+				var m map[string]any
+				if json.Unmarshal([]byte(line), &m) != nil {
+					continue
+				}
+				switch m["kind"] {
+				case "advisory":
+					announced++
+				case "advisory_decision":
+					decided++
+				}
+			}
+		}
+		if decided != 1 {
+			t.Errorf("%s: %d advisory_decision rows, want 1 — the outcome was not recorded", r.name, decided)
+		}
+		if (announced > 0) != r.wantAdv {
+			t.Errorf("%s: announced=%d, want %v", r.name, announced, r.wantAdv)
+		}
+		lg.Close()
+	}
+}
