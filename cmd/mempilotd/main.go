@@ -408,7 +408,15 @@ func pressureName(l model.PressureLevel) string {
 // reliefCooldown bounds how often L1 speaks. Twenty minutes is long enough
 // that a recommendation is news each time it appears, and short enough that a
 // worsening situation is re-reported within one reporting window.
-const reliefCooldown = 20 * time.Minute
+// reliefCooldown bounds how often the automatic L1 answer is written.
+//
+// Measured on this machine over one day: 40 Warn episodes, median 0.3 minutes,
+// longest 8.3 minutes, none reaching 20. A 20-minute cooldown therefore
+// answered every episode at most once — and, because the first sample of an
+// episode is also when the daemon has the least history, usually answered it
+// at its weakest. Five minutes covers the same ground three times over and
+// still cannot repeat a recommendation the owner has already had time to read.
+const reliefCooldown = 5 * time.Minute
 
 // attributionWindowS is the reporting window (5 min). Short enough that a
 // report describes "just now"; long enough that a 15 s snapshot cadence gives

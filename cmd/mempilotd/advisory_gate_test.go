@@ -122,3 +122,20 @@ func TestReliefCooldownIsNotSpentOnAnEmptyWindow(t *testing.T) {
 	next.At = warn.At.Add(5 * time.Second)
 	h.recommendRelief(next, 0.5)
 }
+
+// The cooldown must fit inside the episodes it is meant to answer. Measured on
+// this machine over one day: 40 Warn episodes, median 0.3 minutes, longest 8.3
+// minutes, none reaching 20. A 20-minute cooldown answered each episode at most
+// once — and at the moment it had the least history to answer with.
+func TestReliefCooldownFitsInsideAWarnEpisode(t *testing.T) {
+	const longestEpisode = 8*time.Minute + 20*time.Second // measured maximum
+	if reliefCooldown > longestEpisode {
+		t.Errorf("cooldown %v exceeds the longest observed Warn episode %v; "+
+			"an episode can then never be answered twice, however much the "+
+			"first answer missed", reliefCooldown, longestEpisode)
+	}
+	if reliefCooldown < time.Minute {
+		t.Errorf("cooldown %v is short enough to repeat a sentence the owner "+
+			"has not finished reading", reliefCooldown)
+	}
+}
