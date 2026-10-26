@@ -1441,3 +1441,95 @@ func TestCoverageFlipDoesNotEnterTheTrend(t *testing.T) {
 			"that grew ~300 MB", worst>>20, peak)
 	}
 }
+
+// The four flip patterns measured on this machine today, through the real
+// Attributor, with a genuine slow climb underneath each. Every one produced an
+// advisory before the trend-fitting fix; none may now.
+func TestMeasuredFlipPatternsProduceNoTrend(t *testing.T) {
+	cases := []struct {
+		name   string
+		lo, hi int
+		footMB int64
+	}{
+		{"node", 43, 71, 60},           // measured: 43 <-> 71 across 14 distinct counts
+		{"claude", 9, 41, 40},          // measured: 9 <-> 41
+		{"postgres", 9, 41, 40},        // measured: 9 <-> 41
+		{"mdworker_shared", 2, 16, 18}, // measured: 2 <-> 16
+	}
+	for _, c := range cases {
+		a := New(300)
+		start := t0
+		for i := 0; i < 80; i++ {
+			n := c.lo
+			if i%2 == 1 {
+				n = c.hi
+			}
+			size := uint64((c.footMB + int64(i)) << 20) // real slow climb
+			var procs []model.ProcessSample
+			for j := 0; j < n; j++ {
+				procs = append(procs, model.ProcessSample{
+					Identity: model.ProcessIdentity{Pid: int32(1000 + j), Ppid: 900,
+						StartTime: start.Add(-time.Hour), Executable: "/usr/bin/" + c.name},
+					FootprintBytes: size, ResidentBytes: size, Quality: model.QualGood})
+			}
+			procs = append(procs, model.ProcessSample{
+				Identity: model.ProcessIdentity{Pid: 900, Ppid: 1,
+					StartTime: start.Add(-time.Hour), Executable: "/usr/bin/" + c.name},
+				FootprintBytes: 100 << 20, ResidentBytes: 100 << 20, Quality: model.QualGood})
+			snap := model.ProcessSnapshot{At: start.Add(time.Duration(i) * 15 * time.Second),
+				Processes: procs, Quality: model.QualGood,
+				Coverage: model.Coverage{Attempted: len(procs), Succeeded: len(procs)}}
+			a.Observe(snap, sys(200000))
+		}
+		last := start.Add(80 * 15 * time.Second)
+		a.CloseWindowAndReset(model.SystemSample{At: last, PageBytes: 16384,
+			FreePages: 4000, KernelLevel: model.LevelWarn,
+			MachStatsQuality: model.QualGood, KernelLevelQuality: model.QualGood})
+		st, ok := a.WindowStats(c.name)
+		if !ok {
+			t.Errorf("%s: no stats — the group did not form", c.name)
+			continue
+		}
+		if st.NetGrowthBytes != 0 {
+			t.Errorf("%s (%d<->%d visible): net growth %d MB from a flip — this "+
+				"is the advisory measured at 06:31 and 08:49 today",
+				c.name, c.lo, c.hi, st.NetGrowthBytes>>20)
+		}
+	}
+}
+
+// And the guard must not silence a group whose composition is stable and which
+// is genuinely accumulating: the classifier has to keep working.
+func TestStableAccumulationStillProducesATrend(t *testing.T) {
+	a := New(300)
+	start := t0
+	for i := 0; i < 80; i++ {
+		size := uint64((25 + int64(i)) << 20)
+		var procs []model.ProcessSample
+		for j := 0; j < 12; j++ {
+			procs = append(procs, model.ProcessSample{
+				Identity: model.ProcessIdentity{Pid: int32(1000 + j), Ppid: 900,
+					StartTime: start.Add(-time.Hour), Executable: "/usr/bin/stable-control"},
+				FootprintBytes: size, ResidentBytes: size, Quality: model.QualGood})
+		}
+		procs = append(procs, model.ProcessSample{
+			Identity: model.ProcessIdentity{Pid: 900, Ppid: 1,
+				StartTime: start.Add(-time.Hour), Executable: "/usr/bin/stable-control"},
+			FootprintBytes: 100 << 20, ResidentBytes: 100 << 20, Quality: model.QualGood})
+		snap := model.ProcessSnapshot{At: start.Add(time.Duration(i) * 15 * time.Second),
+			Processes: procs, Quality: model.QualGood,
+			Coverage: model.Coverage{Attempted: len(procs), Succeeded: len(procs)}}
+		a.Observe(snap, sys(200000))
+	}
+	a.CloseWindowAndReset(model.SystemSample{At: start.Add(80 * 15 * time.Second),
+		PageBytes: 16384, FreePages: 4000, KernelLevel: model.LevelWarn,
+		MachStatsQuality: model.QualGood, KernelLevelQuality: model.QualGood})
+	st, ok := a.WindowStats("stable-control")
+	if !ok {
+		t.Fatal("no stats for the stable group")
+	}
+	if st.NetGrowthBytes <= 0 {
+		t.Error("a stable group accumulating 12 members' worth produced no trend — " +
+			"the guard is too tight and the classifier is now silent on real leaks")
+	}
+}
