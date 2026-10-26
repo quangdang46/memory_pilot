@@ -92,10 +92,23 @@ kernel's own accounting.
    the process. This is a design decision (ST-1/ST-2 fail the build if a
    termination primitive appears outside tests), not an oversight, and it is the
    reason the product cannot "handle" a leak by itself.
-2. **The automatic path was not exercised at Warn.** The probe run happened at
-   Normal pressure, where the daemon deliberately stays silent.
-   `mempilot relief` produces the identical computation with the gate removed,
-   so the answer is not in doubt, but the automatic delivery of it at Warn under
-   a real leak is still unproven end to end.
+2. **The automatic path ran, and its history is the record of this work.**
+   Eight `relief_recommendation` records were written at Warn, unasked:
+
+   ```
+   23:51:59  cands= 39  relief=    0MB  named=0   (Finder, the VM, every helper)
+   00:34:22  cands= 33  relief=    0MB  named=0   ("no CPU for 5m30s" = daemon age)
+   06:13:47  cands= 43  relief=    0MB  named=0
+   06:47:23  cands=  1  relief=    0MB  named=0   (the probe, mislabelled)
+   06:54:13  cands= 36  relief=    0MB  named=0   (lifetime evidence, no orphan)
+   06:55:18  cands= 36  relief=    0MB  named=8   (first orphans found)
+   07:10:50  cands= 33  relief=    0MB  named=6
+   07:28:24  cands= 18  relief=  601MB  named=5   (relief counted, honest gap)
+   ```
+
+   The progression is the measurement: the same machine, the same pressure
+   level, five separate defects removed. The last row is the automatic path
+   producing the correct sentence without being asked, at a moment when
+   `mempilot relief` was not running.
 3. **Critical paths and the 72-hour soak** are unchanged from
    `evidence/FINAL-STATUS.md`.
