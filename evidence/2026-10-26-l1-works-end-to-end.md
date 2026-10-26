@@ -79,6 +79,29 @@ Each of these was forced by a failure, not chosen in advance.
 | lifetime-CPU evidence | clamping every quiet claim to the observation window refused the real orphan. A process's own accounting is evidence independent of when the sampler started |
 | full image path for identity | `comm` reported three `claude` processes as "2.1.310" — the version directory — so every protection list missed the agent the owner was talking to |
 
+## The number was checked by closing the process
+
+L1 said 905 MB. "Closing this returns 905 MB" is a promise about the machine, so
+it was measured: sum every process's `phys_footprint` before and after closing
+the orphan, with nothing else changed.
+
+```
+probe at full size:                 Footprint: 905 MB
+total process footprint, before:    25466 MB   (501 processes)
+total process footprint, after:     24652 MB   (492 processes)
+difference:                          814 MB
+```
+
+814 of 905 MB, 90%. The missing 91 MB is shared pages: `phys_footprint` counts
+a mapping once per process, and part of that 905 MB was pages other processes
+also map. The `report` output has carried this caveat since it was written
+("Shared pages are counted per-process, so process sums can exceed the system
+delta"); this is the first time it was quantified on a real case.
+
+So the recommendation is accurate to within 10% on the optimistic side, and it
+is optimistic in the direction the text already warns about. Recording that is
+more useful than claiming the prediction is exact.
+
 ## What this establishes, and what it does not
 
 **Establishes:** the detection and recommendation tier works on a real orphan —
