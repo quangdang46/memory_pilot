@@ -440,10 +440,20 @@ func (a *Attributor) Observe(snap model.ProcessSnapshot, sys model.SystemSample)
 		// It decays one process per quiet tick instead of dropping outright, so
 		// a genuine accumulation — which keeps its children — stays at its
 		// high-water mark while a transient spike fades.
+		// The decay has to be proportional, not one process per tick. Measured
+		// on this machine at a 15 s process cadence: postgres peaked at 62
+		// connections during a burst, dropped to 9 within two minutes, and was
+		// still being called "accumulating subprocesses" thirteen minutes
+		// later — one-per-tick decay needs 53 ticks. A connection pool is the
+		// normal shape of a busy service, not a leak.
+		//
+		// Halving preserves both properties the old rule wanted: a genuine
+		// accumulation keeps its children and therefore keeps its mark, while a
+		// transient spike fades in about as long as it took to appear.
 		if n := tickProcs[gid]; n > h.peakProcs {
 			h.peakProcs = n
 		} else if h.peakProcs > n {
-			h.peakProcs--
+			h.peakProcs = n + (h.peakProcs-n)/2
 		}
 		// Net growth is the group's change in total size, recomputed each tick
 		// rather than accumulated from per-member deltas.

@@ -1323,3 +1323,50 @@ func TestGroupLabelIsTheTableName(t *testing.T) {
 		}
 	}
 }
+
+// A connection pool is the normal shape of a busy service. Measured on this
+// machine at a 15 s cadence: postgres peaked at 62 connections during a burst,
+// was back to 9 within two minutes, and was still reported "process count
+// reached 62" thirteen minutes later — one-per-tick decay needs 53 ticks.
+func TestTransientProcessSpikeFadesQuickly(t *testing.T) {
+	a := New(60)
+	start := t0
+	// The same parent throughout; the pool's members come and go under it.
+	parent := [3]any{int32(900), int32(1), uint64(100 << 20)}
+	tick := func(n int, at time.Time) {
+		entries := [][3]any{parent}
+		for i := 0; i < n; i++ {
+			entries = append(entries, [3]any{int32(1000 + i), int32(900), uint64(20 << 20)})
+		}
+		s := snapWithParents(entries)
+		s.At = at
+		// Executable must be set or every process becomes its own group
+		// ("pid-N"): the anchor walk has nothing to match on.
+		for i := range s.Processes {
+			if s.Processes[i].Identity.Pid == 900 {
+				s.Processes[i].Identity.Executable = "/opt/homebrew/bin/postgres"
+			} else {
+				s.Processes[i].Identity.Executable = "/opt/homebrew/bin/postgres"
+			}
+		}
+		a.Observe(s, sys(200000))
+	}
+	tick(60, start) // burst: 60 connections under one parent
+	for i := 1; i <= 12; i++ {
+		tick(9, start.Add(time.Duration(i)*15*time.Second))
+	}
+	a.mu.Lock()
+	var peak int
+	for _, h := range a.history {
+		if h.peakProcs > peak {
+			peak = h.peakProcs
+		}
+	}
+	a.mu.Unlock()
+	// One-per-tick decay from 60 needs 51 ticks; proportional decay is at 9
+	// after about six. Twelve ticks separates them clearly.
+	if peak > 20 {
+		t.Errorf("peak still %d after 12 quiet ticks (3 minutes) — a transient "+
+			"spike is being reported as accumulation", peak)
+	}
+}
