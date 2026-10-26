@@ -109,10 +109,16 @@ type rateLimiter struct {
 func newRateLimiter() *rateLimiter {
 	return &rateLimiter{
 		counts: map[model.ActionKind][]time.Time{},
+		// EmitAdvisory is deliberately absent: it is a record, not an
+		// intervention, and it is bounded where its content is decided (one per
+		// group per hour, identical text suppressed, escalation override).
+		// A limit here counted attempts rather than emissions — policy offers
+		// one per Warn tick, 720/hour against 60 — and 193 of 261 attempts were
+		// refused, including at Critical.
 		maxPerH: map[model.ActionKind]int{
 			model.ActionTrimOwnBuffers: 12, model.ActionRotateOwnLedger: 6,
-			model.ActionEmitAdvisory: 60, model.ActionDeferLaunch: 30,
-			model.ActionStopOwned: 2, // L2 is deliberately scarce
+			model.ActionDeferLaunch: 30,
+			model.ActionStopOwned:   2, // L2 is deliberately scarce
 		},
 		minGap: map[model.ActionKind]time.Duration{
 			model.ActionStopOwned: 15 * time.Minute,
@@ -123,7 +129,10 @@ func newRateLimiter() *rateLimiter {
 func (rl *rateLimiter) allow(k model.ActionKind, now time.Time) (bool, string) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
-	max := rl.maxPerH[k]
+	max, limited := rl.maxPerH[k]
+	if !limited {
+		return true, ""
+	}
 	var keep []time.Time
 	for _, t := range rl.counts[k] {
 		if now.Sub(t) < time.Hour {
