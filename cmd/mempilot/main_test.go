@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func capture(t *testing.T, f func()) string {
@@ -69,5 +70,27 @@ func TestSummaryPrefersTheNotableVerdict(t *testing.T) {
 	}
 	if notable(map[string]any{}) != 0 {
 		t.Error("a record with no bucket ranked above silence")
+	}
+}
+
+// `report` must not present an old record as current. Measured: after the
+// extrapolation bug was fixed, `report` still ended with "group Code grew by
+// 3864 MB" — a classification from six minutes earlier, produced by the bug
+// that had just been fixed, shown with no indication of its age.
+func TestReportDoesNotShowStaleRecords(t *testing.T) {
+	stale := map[string]any{"at": time.Now().Add(-20 * time.Minute).Format(time.RFC3339Nano),
+		"kind": "classification", "bucket": "subprocess_accumulation"}
+	if !olderThan(stale, 15*time.Minute) {
+		t.Error("a 20-minute-old record was treated as current at a 15-minute bound")
+	}
+	fresh := map[string]any{"at": time.Now().Format(time.RFC3339Nano),
+		"kind": "classification", "bucket": "subprocess_accumulation"}
+	if olderThan(fresh, 15*time.Minute) {
+		t.Error("a fresh record was treated as stale")
+	}
+	// A record with no timestamp is stale: showing it as current is the
+	// failure being guarded against.
+	if !olderThan(map[string]any{"kind": "advisory"}, 15*time.Minute) {
+		t.Error("a record with no timestamp was treated as current")
 	}
 }

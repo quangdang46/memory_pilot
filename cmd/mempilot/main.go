@@ -137,16 +137,24 @@ func report(args []string) {
 				latestAttr = r
 			}
 		case "classification":
-			// Newest window wins, then the most notable bucket in it. Taking
-			// the first record made the summary line arbitrary: the ledger
-			// happened to order a group that grew 0 MB first, so `report`
-			// ended with "group intelligenceflo grew by 0 MB — insufficient
-			// evidence", which is true, useless, and reads like a fault.
+			// The classification summary must describe the window `report` is
+			// showing, not the most interesting thing in the last 45 minutes.
+			// Measured: after the attribution fix, `report` still ended with
+			// "group Code grew by 3864 MB" — a record from six minutes earlier,
+			// produced by the extrapolation bug that had just been fixed, and
+			// presented with no indication of its age.
+			win := strOf(latestAttr["at"])
+			if win == "" || strOf(r["at"]) < win {
+				continue // belongs to an older window
+			}
 			if latestVerdict == nil || notable(r) > notable(latestVerdict) {
 				latestVerdict = r
 			}
 		case "advisory":
-			if len(advisories) < 6 {
+			// "Latest advisories" means latest. The 45-minute scan window was
+			// wide enough that a record produced by a since-fixed bug kept
+			// appearing at the bottom of `report` as though it were current.
+			if len(advisories) < 6 && !olderThan(r, 15*time.Minute) {
 				advisories = append(advisories, r)
 			}
 		}
@@ -199,6 +207,17 @@ func report(args []string) {
 			fmt.Printf("  [%s] %s\n", strOf(a["strength"]), strOf(a["text"]))
 		}
 	}
+}
+
+// olderThan reports whether a ledger record's timestamp is more than d ago.
+// A record with no readable timestamp is treated as old: presenting it as
+// current is the failure this guards against.
+func olderThan(r map[string]any, d time.Duration) bool {
+	ts, err := time.Parse(time.RFC3339Nano, strOf(r["at"]))
+	if err != nil {
+		return true
+	}
+	return time.Since(ts) > d
 }
 
 // notable ranks a verdict for the one-line summary. "Insufficient evidence"
