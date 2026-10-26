@@ -619,3 +619,53 @@ func TestOrphanAndServiceAreDistinguished(t *testing.T) {
 		t.Errorf("wrong process survived: %s", cs[0].Group)
 	}
 }
+
+// The abandoned line must carry the number it rests on. "Quiet for a while"
+// reads as a finding without being checkable — measured, five pnpm processes
+// had been silent for 22 hours and the line never said so.
+func TestAbandonedLineStatesTheQuietPeriod(t *testing.T) {
+	f := GroupFacts{ObservedFor: 24 * time.Hour, Members: []Member{
+		{Pid: 64747, Exe: "/opt/node/bin/node", Footprint: 120 << 20,
+			QuietFor: 22 * time.Hour, ParentGone: true},
+	}}
+	cs := AssessMembers(f)
+	if len(cs) != 1 {
+		t.Fatalf("%d candidates, want 1", len(cs))
+	}
+	r := &Recommendation{Severity: "Warn", Shortfall: 1 << 30, Candidates: cs}
+	for _, c := range cs {
+		r.TotalRelief += c.ExpectedReliefBytes
+	}
+	txt := r.Text()
+	if !strings.Contains(txt, "no CPU for 22h0m0s") {
+		t.Errorf("the quiet period is not stated:\n%s", txt)
+	}
+	if strings.Contains(txt, "quiet for a while") {
+		t.Errorf("vague phrasing survived:\n%s", txt)
+	}
+}
+
+// When the claim rests on lifetime CPU rather than the quiet clock, say that
+// instead of inventing a duration.
+func TestLifetimeClaimDoesNotInventAQuietPeriod(t *testing.T) {
+	f := GroupFacts{ObservedFor: 5 * time.Minute, Members: []Member{
+		{Pid: 47396, Exe: "/private/tmp/orphanprobe", Footprint: 905 << 20,
+			QuietFor: 30 * time.Second, CpuTotalS: 0.01, AgeS: 1800,
+			ParentGone: true},
+	}}
+	cs := AssessMembers(f)
+	if len(cs) != 1 {
+		t.Fatalf("%d candidates, want 1", len(cs))
+	}
+	r := &Recommendation{Severity: "Warn", Shortfall: 1 << 30, Candidates: cs}
+	for _, c := range cs {
+		r.TotalRelief += c.ExpectedReliefBytes
+	}
+	want := "idle by its own CPU record"
+	if !strings.Contains(r.Text(), want) {
+		t.Errorf("no %q in:\n%s", want, r.Text())
+	}
+	if strings.Contains(r.Text(), "no CPU for 30s") {
+		t.Errorf("quoted a 30 s window as the basis:\n%s", r.Text())
+	}
+}

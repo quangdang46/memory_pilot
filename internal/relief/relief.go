@@ -46,6 +46,12 @@ type Candidate struct {
 	// State is useful / suspicious / abandoned. Default is useful: the burden
 	// of proof is on moving away from it.
 	State string
+
+	// SilentFor is the quiet period the claim rests on, when the claim rests on
+	// the quiet clock. Zero means it rests on lifetime CPU instead. The
+	// recommendation prints it: "quiet for a while" hides the number that
+	// makes the sentence checkable.
+	SilentFor time.Duration
 }
 
 const (
@@ -394,6 +400,9 @@ func AssessMembers(f GroupFacts) []Candidate {
 			c.AbandonmentConfidence = 0.85
 			c.InterruptionRisk = 0.15
 			c.Evidence = append(c.Evidence, "parent gone: nothing is waiting on it")
+			if !lifetimeIdle {
+				c.SilentFor = m.QuietFor
+			}
 		case m.ParentGone:
 			c.State = StateSuspicious
 			c.AbandonmentConfidence = 0.5
@@ -529,7 +538,17 @@ func (r *Recommendation) Text() string {
 	s := fmt.Sprintf("closing %d abandoned workload(s) would return ~%d MB",
 		named, relief>>20)
 	for _, c := range abandoned {
-		s += fmt.Sprintf("\n  %s: %d MB, quiet for a while, parent gone", c.Group, c.FootprintMB())
+		// State the number the claim rests on. "Quiet for a while" is the kind
+		// of phrase that reads as a finding without being checkable — measured
+		// on this machine, five pnpm processes had been silent for 22 hours and
+		// the reader would never learn that from this line.
+		if c.SilentFor >= MinQuietForSuspicious {
+			s += fmt.Sprintf("\n  %s: %d MB, no CPU for %s, parent gone",
+				c.Group, c.FootprintMB(), c.SilentFor.Round(time.Second))
+		} else {
+			s += fmt.Sprintf("\n  %s: %d MB, idle by its own CPU record, parent gone",
+				c.Group, c.FootprintMB())
+		}
 	}
 	if named > len(abandoned) {
 		s += fmt.Sprintf("\n  ... and %d more", named-len(abandoned))
