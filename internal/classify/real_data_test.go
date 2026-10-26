@@ -69,7 +69,7 @@ func TestInflatedNetGrowthWasTheOnlyThingBehindTheAdvisory(t *testing.T) {
 	for _, b := range v.Basis {
 		joined += b + " "
 	}
-	if !strings.Contains(joined, "not credible") {
+	if !strings.Contains(joined, "not credible") && !strings.Contains(joined, "no trend extrapolates") {
 		t.Errorf("the refusal does not say why: %v", v.Basis)
 	}
 
@@ -91,5 +91,41 @@ func TestInflatedNetGrowthWasTheOnlyThingBehindTheAdvisory(t *testing.T) {
 	if v := Classify(fixed); v.Bucket == SubprocessAccumulation || v.Bucket == LeakSuspicion {
 		t.Errorf("with net 0 the classifier still produced %s (%v) — the advisory "+
 			"did not depend on the inflated net after all", v.Bucket, v.Basis)
+	}
+}
+
+// VTDecoderXPCSer, recorded at 00:53/00:58/01:03: net growth 665/741/447 MB
+// against 7/10/22 MB in the window and 556/567/589 MB over its whole life. It
+// cannot be on pace to add more than it has ever added.
+func TestPaceCannotExceedLifetimeGrowth(t *testing.T) {
+	for _, c := range []struct{ net, life, win int64 }{
+		{665, 556, 7}, {741, 567, 10}, {447, 589, 22},
+	} {
+		s := SeriesStats{
+			GroupKey: "VTDecoderXPCSer", CoverageRatio: 1.0,
+			SlopeBytesS: 581386, ActivityCorr: 0, QuietS: 1484, DurationS: 1484,
+			GrowthBytes: c.win << 20, LongGrowthBytes: c.life << 20,
+			NetGrowthBytes: c.net << 20, ProcessCount: 2, PeakProcessCount: 2,
+			LongPeakProcesses: 2,
+		}
+		v := Classify(s)
+		// A leak verdict is correct here — this group added 13-32 MB every five
+		// minutes for five hours. What is not acceptable is the number: the fit
+		// claimed 665 MB against 7 MB actually added.
+		if v.Bucket == LeakSuspicion && v.GrowthMB > 5*c.win {
+			t.Errorf("verdict quotes %d MB while the window added %d MB — the "+
+				"sentence outruns its own evidence (%v)", v.GrowthMB, c.win, v.Basis)
+		}
+	}
+	// A trend that extrapolates at up to twice lifetime is still credible.
+	s := SeriesStats{
+		GroupKey: "real-accum", CoverageRatio: 1.0, SlopeBytesS: 900000,
+		ActivityCorr: 0, QuietS: 1300, DurationS: 1300,
+		GrowthBytes: 300 << 20, LongGrowthBytes: 400 << 20,
+		NetGrowthBytes: 700 << 20, ProcessCount: 12, PeakProcessCount: 12,
+		LongPeakProcesses: 12,
+	}
+	if v := Classify(s); v.Bucket != SubprocessAccumulation {
+		t.Errorf("a credible 700 MB pace on 400 MB lifetime produced %s — too tight", v.Bucket)
 	}
 }

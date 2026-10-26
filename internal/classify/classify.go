@@ -166,6 +166,19 @@ func Classify(s SeriesStats) Verdict {
 	// rather than act on it. Ten times lifetime growth is generous — a real
 	// accumulation trend extrapolates at roughly its own rate — and it still
 	// rejects every corruption observed today by two orders of magnitude.
+	// A group cannot be on pace to add more than it has ever added. This is
+	// tighter than the 10x bar and catches the case where the extrapolation
+	// exceeds the lifetime total outright: measured, VTDecoderXPCSer reported
+	// "will add 665 MB" with 7 MB in the window and 556 MB over its whole life.
+	// A real trend extrapolates at roughly the rate it has been growing, so
+	// exceeding the lifetime total means the slope is not describing the group.
+	if s.LongGrowthBytes > 0 && accGrow > 2*s.LongGrowthBytes {
+		v.Basis = append(v.Basis,
+			fmt.Sprintf("net growth %d MB exceeds twice the lifetime growth %d MB — "+
+				"no trend extrapolates that far past what the group has ever done",
+				accGrow>>20, s.LongGrowthBytes>>20))
+		accGrow = 0
+	}
 	if s.LongGrowthBytes > 0 && accGrow > 10*s.LongGrowthBytes {
 		v.Basis = append(v.Basis,
 			fmt.Sprintf("net growth %d MB exceeds ten times lifetime growth %d MB — not credible",
@@ -215,6 +228,35 @@ func Classify(s SeriesStats) Verdict {
 	leakGrow := s.NetGrowthBytes
 	if s.DurationS == 0 {
 		leakGrow = s.GrowthBytes
+	}
+	// A leak verdict rests on "it has been growing and is still growing". The
+	// window is the direct evidence of the second half: measured,
+	// VTDecoderXPCSer showed 7, 10 and 22 MB of window growth while the
+	// extrapolation claimed 665, 741 and 447 MB. A group that grew 10 MB in
+	// five minutes is not growing at 741 MB per twenty.
+	//
+	// This is tighter than the lifetime rule on purpose. The leak branch's
+	// claim is "sustained growth", and sustained growth shows up in the window;
+	// when the window is nearly empty the pace is the fit talking, not the
+	// group. Ten times is generous — a genuine leak's window growth is the
+	// same order as its rate.
+	// When the extrapolation outruns the window badly, the window is the better
+	// evidence — but it may still show real growth, so the verdict is kept and
+	// its number corrected rather than discarded. Measured, VTDecoderXPCSer
+	// added 13-32 MB every five minutes for five hours while the fit claimed
+	// 665 MB; the group was leaking, the sentence was not.
+	if s.GrowthBytes > 0 && leakGrow > 10*s.GrowthBytes {
+		v.Basis = append(v.Basis,
+			fmt.Sprintf("the fitted pace of %d MB outruns the %d MB added in the "+
+				"window; quoting the window", leakGrow>>20, s.GrowthBytes>>20))
+		leakGrow = s.GrowthBytes
+	}
+	if s.LongGrowthBytes > 0 && leakGrow > 2*s.LongGrowthBytes {
+		v.Basis = append(v.Basis,
+			fmt.Sprintf("net growth %d MB exceeds twice the lifetime growth %d MB — "+
+				"no trend extrapolates that far past what the group has ever done",
+				leakGrow>>20, s.LongGrowthBytes>>20))
+		leakGrow = 0
 	}
 	if s.QuietS >= QuietWindowS && s.DurationS >= MinSuspectWindowS &&
 		s.CoverageRatio >= MinCoverageRatio && !s.CacheRole &&
