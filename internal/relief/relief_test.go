@@ -596,3 +596,26 @@ func TestAgentMatchedByPathSegment(t *testing.T) {
 		t.Error("the probe binary was excluded by a protection rule")
 	}
 }
+
+// The evidence that separates an orphan from a launchd service. macOS reparents
+// both to pid 1, so ppid is not enough on either side: measured, the first live
+// run called every service abandoned, and a real orphan sat at
+// parentGone=false for its whole life.
+func TestOrphanAndServiceAreDistinguished(t *testing.T) {
+	f := GroupFacts{ObservedFor: 10 * time.Minute, Members: []Member{
+		// ppid 1 and launchd does not manage it: abandoned.
+		{Pid: 47396, Exe: "/private/tmp/orphanprobe", Footprint: 905 << 20,
+			QuietFor: 16 * time.Minute, CpuTotalS: 0.01, AgeS: 980,
+			ParentGone: true},
+		// ppid 1 and launchd manages it: a service, never a candidate.
+		{Pid: 952, Exe: "/System/Library/CoreServices/Finder.app/Contents/MacOS/Finder",
+			Footprint: 300 << 20, QuietFor: time.Hour, CpuTotalS: 1, AgeS: 90000},
+	}}
+	cs := AssessMembers(f)
+	if len(cs) != 1 {
+		t.Fatalf("%d candidates, want only the orphan", len(cs))
+	}
+	if !strings.Contains(cs[0].Group, "orphanprobe") {
+		t.Errorf("wrong process survived: %s", cs[0].Group)
+	}
+}

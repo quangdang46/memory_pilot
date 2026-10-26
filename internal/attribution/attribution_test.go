@@ -1199,3 +1199,45 @@ func TestQuietBoundClampsUnobservedClaims(t *testing.T) {
 			"that claims beyond the bound get clamped by the caller", quiet, bound)
 	}
 }
+
+// launchd manages 185 jobs on this machine; an orphan is not one of them. That
+// is the only evidence that separates the two, since macOS reparents both to
+// pid 1. Measured: a real orphan whose parent exited before the daemon started
+// reported parentGone=false and was never named.
+func TestLaunchdJobsSeparateOrphanFromService(t *testing.T) {
+	a := New(60)
+	a.SetLaunchdJobs(map[int32]bool{952: true, 930: true}, true)
+	// ppid 1 from the first sample: parent exited before we looked.
+	a.Observe(snapWithParents([][3]any{
+		{int32(500), int32(1), uint64(900 << 20)}, // an orphan
+		{int32(952), int32(1), uint64(300 << 20)}, // Finder, a launchd job
+	}), sys(200000))
+	a.Observe(snapWithParents([][3]any{
+		{int32(500), int32(1), uint64(900 << 20)},
+		{int32(952), int32(1), uint64(300 << 20)},
+	}), sys(200000))
+	got := map[int32]bool{}
+	for _, m := range a.Members() {
+		got[m.Pid] = m.ParentGone
+	}
+	if !got[500] {
+		t.Error("an unmanaged pid-1 process was not reported as an orphan")
+	}
+	if got[952] {
+		t.Error("a launchd job was reported as an orphan — this named Finder in the first live run")
+	}
+}
+
+// Without the launchd list, no orphan claim is invented from ppid alone.
+func TestUnknownLaunchdStateMakesNoClaim(t *testing.T) {
+	a := New(60)
+	a.SetLaunchdJobs(nil, false) // read failed
+	a.Observe(snapWithParents([][3]any{
+		{int32(600), int32(1), uint64(900 << 20)},
+	}), sys(200000))
+	for _, m := range a.Members() {
+		if m.Pid == 600 && m.ParentGone {
+			t.Error("claimed an orphan while the launchd list was unknown")
+		}
+	}
+}

@@ -47,6 +47,8 @@ func main() {
 		report(args)
 	case "forecast":
 		forecastLine(args)
+	case "relief":
+		reliefLine(args)
 	case "explain", "doctor", "policy":
 		callAndPrint(cmd, args)
 	case "service":
@@ -67,6 +69,8 @@ func usage() {
   status     daemon health + pressure state
   forecast   current forecast (honest language, no ETA promises when warming)
   report     what grew, by workload group, with coverage
+  relief     what could be released now, how much it returns, and whether that
+             is enough — the L1 answer, on demand
   explain    reconstruct a decision from the ledger
   policy     current mode + allowlist
   doctor     installation + platform probe
@@ -247,6 +251,31 @@ func printGroups(gs []group, all bool) {
 	}
 	if shown == 0 && hidden == 0 {
 		fmt.Println("  no group grew beyond the reporting floor in this window")
+	}
+}
+
+// reliefLine asks the daemon the L1 question directly. Unlike an advisory it
+// is not gated on pressure or rate-limited: the owner asked, so they get the
+// current answer with its evidence.
+func reliefLine(args []string) {
+	raw := fetch("relief")
+	if hasFlag(args, "--json") {
+		printRaw(raw)
+		return
+	}
+	var d struct {
+		Severity    string `json:"severity"`
+		ShortfallMB int64  `json:"shortfall_mb"`
+		TotalMB     int64  `json:"total_relief_mb"`
+		Sufficient  bool   `json:"sufficient"`
+		Candidates  int    `json:"candidates"`
+		Text        string `json:"text"`
+	}
+	json.Unmarshal(raw, &d)
+	fmt.Println(d.Text)
+	if d.Candidates > 0 {
+		fmt.Printf("\n(%d candidate(s), %d MB releasable, shortfall %d MB, sufficient %v, at %s pressure)\n",
+			d.Candidates, d.TotalMB, d.ShortfallMB, d.Sufficient, d.Severity)
 	}
 }
 

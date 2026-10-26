@@ -38,6 +38,11 @@ type series struct {
 	// this, "no parent series" is ambiguous: the parent may simply be outside
 	// the 75% coverage this machine gives.
 	hadParent bool
+	// parentSeen records that the parent was observed alive at least once
+	// while this process existed. Without it, "parent not in the series" is
+	// ambiguous — the parent may simply never have been sampled — and the
+	// orphan probe sat at parentGone=false for its whole life.
+	parentSeen bool
 	// cpuUnknown records that at least one sample of this process had no CPU
 	// accounting. Its quiet period is then unknown, not long — the difference
 	// between "nothing is using this" and "we could not see whether anything
@@ -126,6 +131,11 @@ type Attributor struct {
 	// start > firstSnapAt is still true, and would be counted afresh each time
 	// it flickers. Measured: one steady 300 MB process flickering produced
 	// -1500 MB of net; node swung +2878 MB while holding 3.2 GB steady.
+	// launchdJobs is the set of pids launchd manages as jobs; launchdKnown says
+	// whether that set was read successfully. When it was not, no orphan claim
+	// is made from ppid alone.
+	launchdJobs    map[int32]bool
+	launchdKnown   bool
 	seenIdentities map[string]bool
 	// lastBytes remembers the footprint an identity held when its series was
 	// swept. A process hidden by a coverage gap is not gone; if it reappears,
@@ -271,6 +281,9 @@ func (a *Attributor) Observe(snap model.ProcessSnapshot, sys model.SystemSample)
 		s.ppid = p.Identity.Ppid // reparenting is recorded, membership is sticky (§4.2)
 		if s.ppid > 1 {
 			s.hadParent = true
+			if _, live := a.parents[s.ppid]; live {
+				s.parentSeen = true
+			}
 		}
 		if d > 0 {
 			s.delta += d
@@ -1139,6 +1152,16 @@ type MemberFact struct {
 	ParentGone  bool
 }
 
+// SetLaunchdJobs supplies the pids launchd currently manages. macOS reparents
+// an orphan to pid 1, exactly like a launchd service, so this is the only
+// evidence that separates them.
+func (a *Attributor) SetLaunchdJobs(pids map[int32]bool, known bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.launchdJobs = pids
+	a.launchdKnown = known
+}
+
 // highestQualityWindowS is the longest run of samples this daemon has taken
 // without a coverage gap. A quiet period longer than that cannot be claimed:
 // we were not watching for all of it.
@@ -1214,11 +1237,32 @@ func (a *Attributor) Members() []MemberFact {
 		// launchd". Measured in the first live L1 run: 39 candidates including
 		// Finder, the VM and every Chrome helper, all labelled "parent gone"
 		// because their ppid is 1 — which is just how launchd starts a service.
-		_, parentAlive := a.series[identityKeyOf(a, s.ppid)]
-		if s.ppid <= 1 {
+		//
+		// The ppid must come from the latest snapshot, not the folded series:
+		// series are swept two dead ticks after a process exits, so by the time
+		// the orphan is old enough to be a candidate its parent's series is
+		// gone and `a.parents` is the only record of who the parent is now.
+		// Measured: a real orphan sat at parentGone=false and was never named.
+		ppid := s.ppid
+		if live, ok := a.parents[s.id.Pid]; ok {
+			ppid = live
+		}
+		_, parentAlive := a.series[identityKeyOf(a, ppid)]
+		if ppid <= 1 {
 			parentAlive = false
 		}
-		parentGone := s.hadParent && s.ppid <= 1
+		// Three ways to be an orphan, in order of strength:
+		//  1. observed under a parent, now under launchd (hadParent, the
+		//     reparent transition);
+		//  2. observed under a parent at least once and that parent is gone
+		//     from the snapshot (parentSeen);
+		//  3. ppid is 1 and launchd does not manage it (caller-supplied
+		//     evidence — SetLaunchdJobs). This is the only way to recognise an
+		//     orphan that predates the daemon.
+		parentGone := (s.hadParent || s.parentSeen) && ppid <= 1
+		if !parentGone && ppid <= 1 && a.launchdKnown {
+			parentGone = !a.launchdJobs[s.id.Pid]
+		}
 		if s.cpuUnknown {
 			// Unknown quiet period: report the process, but do not let it look
 			// idle. Zero QuietFor keeps it out of every L1 branch that requires

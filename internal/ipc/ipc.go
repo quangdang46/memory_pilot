@@ -22,6 +22,10 @@ const ProtocolVersion = 1
 var Ops = map[string]bool{
 	"status": true, "report": true, "explain": true, "doctor": true,
 	"policy": true, "forecast": true,
+	// The L1 question, asked directly. Read-only like the rest: it computes
+	// the same recommendation the automatic path would, without the pressure
+	// gate or the cooldown.
+	"relief": true,
 	// Managed-launch registration (ADR-014): the wrapper tells the daemon
 	// which process it spawned, whether that launch is stop-authorized, and
 	// when it exits. Without these ops the owned-workload registry can never

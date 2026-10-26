@@ -26,6 +26,7 @@ import (
 	"memory_pilot/internal/ledger"
 	model "memory_pilot/internal/model"
 	"memory_pilot/internal/pipeline"
+	"memory_pilot/internal/platform/macos"
 	"memory_pilot/internal/policy"
 	"memory_pilot/internal/pressure"
 	"memory_pilot/internal/relief"
@@ -189,6 +190,16 @@ func run(dataRoot, cfgPath string) error {
 				// summarizes it per window; this line keeps the coverage
 				// evidence for that window.
 				lg.Append(map[string]any{"kind": "processes", "coverage": snap.Coverage, "n": len(snap.Processes), "at": snap.At})
+				// Two sources of process facts: our own sampling, and launchd's
+				// list of jobs. The second is what separates an orphan from a
+				// service — macOS reparents both to pid 1. Two seconds, once
+				// per process tick, and a failure is passed as "unknown" so no
+				// orphan claim is invented from a missing answer.
+				if pids, ok := macos.LaunchdJobPids(ctx); ok {
+					handler.pipe.Attr.SetLaunchdJobs(pids, true)
+				} else {
+					handler.pipe.Attr.SetLaunchdJobs(nil, false)
+				}
 				handler.pipe.ObserveProcesses(snap, handler.lastSystem())
 				// Reap owned workloads whose wrapper died without admit_exit
 				// (forced kill, crash). Reuses this snapshot rather than paying
@@ -315,9 +326,33 @@ func (h *daemonHandler) recommendRelief(s model.SystemSample, score float64) {
 		return
 	}
 
+	r := h.buildRecommendation(s)
+	if r == nil || len(r.Candidates) == 0 {
+		return
+	}
+	cs := r.Candidates
+	text := r.Text()
+	if viol := classify.PhraseTest(text); len(viol) > 0 {
+		text = "relief recommendation withheld by the phrase test"
+	}
+	h.mu.Lock()
+	h.lastReliefAt = s.At
+	h.mu.Unlock()
+	_ = h.lg.Append(map[string]any{"kind": "relief_recommendation", "at": s.At,
+		"severity": r.Severity, "shortfall_mb": r.Shortfall >> 20,
+		"total_relief_mb": r.TotalRelief >> 20, "sufficient": r.Sufficient(),
+		"candidates": len(cs), "text": text})
+}
+
+// buildRecommendation is the whole L1 computation, with no gate on pressure and
+// no cooldown. recommendRelief wraps it for the automatic path; the `relief` IPC
+// op calls it directly so the owner can ask "what would you do now?" without
+// waiting for the machine to reach Warn. Same members, same bounds, same
+// sentence — the answer does not depend on who asked.
+func (h *daemonHandler) buildRecommendation(s model.SystemSample) *relief.Recommendation {
 	members := h.pipe.Attr.Members()
 	if len(members) == 0 {
-		return
+		return nil
 	}
 	facts := make([]relief.Member, 0, len(members))
 	for _, m := range members {
@@ -333,7 +368,7 @@ func (h *daemonHandler) recommendRelief(s model.SystemSample, score float64) {
 	observed := time.Duration(h.pipe.Attr.QuietBoundS()) * time.Second
 	cs := relief.AssessMembers(relief.GroupFacts{Members: facts, ObservedFor: observed})
 	if len(cs) == 0 {
-		return
+		return &relief.Recommendation{At: s.At, Severity: pressureName(s.KernelLevel)}
 	}
 	relief.Rank(cs)
 
@@ -354,17 +389,7 @@ func (h *daemonHandler) recommendRelief(s model.SystemSample, score float64) {
 			r.TotalRelief += c.ExpectedReliefBytes
 		}
 	}
-	text := r.Text()
-	if viol := classify.PhraseTest(text); len(viol) > 0 {
-		text = "relief recommendation withheld by the phrase test"
-	}
-	h.mu.Lock()
-	h.lastReliefAt = s.At
-	h.mu.Unlock()
-	_ = h.lg.Append(map[string]any{"kind": "relief_recommendation", "at": s.At,
-		"severity": r.Severity, "shortfall_mb": shortfall >> 20,
-		"total_relief_mb": r.TotalRelief >> 20, "sufficient": r.Sufficient(),
-		"candidates": len(cs), "text": text})
+	return r
 }
 
 // pressureName renders a level for the record.
@@ -606,6 +631,32 @@ func (h *daemonHandler) Handle(ctx context.Context, req ipc.Request) (ipc.Respon
 		raw, _ := json.Marshal(map[string]any{"tte_s": tte, "lower_s": lower,
 			"confidence": conf, "calibrated": cal, "actionable": act,
 			"rate_bps": fo.RateBytesS, "line": line})
+		return ipc.Response{V: ipc.ProtocolVersion, OK: true, Data: raw}, nil
+	case "relief":
+		// The same computation the automatic path uses, with the pressure gate
+		// and the cooldown removed. An owner asking "what could be released
+		// now?" should not have to wait for the machine to reach Warn, and the
+		// answer must not depend on who asked.
+		s := h.lastSample
+		s.At = time.Now()
+		if s.PageBytes == 0 {
+			if info := h.plat.Info(); info.TotalRAMBytes > 0 {
+				s.PageBytes = info.PageSizeBytes
+			}
+		}
+		r := h.buildRecommendation(s)
+		if r == nil {
+			raw, _ := json.Marshal(map[string]any{"text": "no processes observed yet"})
+			return ipc.Response{V: ipc.ProtocolVersion, OK: true, Data: raw}, nil
+		}
+		text := r.Text()
+		if viol := classify.PhraseTest(text); len(viol) > 0 {
+			text = "relief recommendation withheld by the phrase test"
+		}
+		raw, _ := json.Marshal(map[string]any{
+			"severity": r.Severity, "shortfall_mb": r.Shortfall >> 20,
+			"total_relief_mb": r.TotalRelief >> 20, "sufficient": r.Sufficient(),
+			"candidates": len(r.Candidates), "text": text})
 		return ipc.Response{V: ipc.ProtocolVersion, OK: true, Data: raw}, nil
 	case "report", "explain", "policy":
 		recs, err := h.lg.ReadAll()
