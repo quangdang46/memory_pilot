@@ -17,6 +17,12 @@
 > the gap it does or does not cover. Detect and recommend only: nothing can
 > terminate.
 >
+> Demonstrated on a real orphan rather than asserted: a process holding 905 MB
+> whose parent had exited, unmanaged by launchd, 0.01 s of CPU in 22 minutes.
+> `mempilot relief` names it, with five others, and says the total does not
+> cover the gap. All six figures match `/usr/bin/footprint` to the megabyte
+> (`evidence/2026-10-26-l1-works-end-to-end.md`).
+>
 > Still unproven, and stated as such:
 > - **Critical pressure was reached twice**, at 22:59 on 2026-10-25 — this
 >   README said otherwise until the ledger was counted
@@ -25,6 +31,9 @@
 >   buffers and rotated its own log, while 7.7 GB sat in the compressor. L2
 >   managed stop still has not executed against a live daemon; it is covered by
 >   tests against real processes only.
+> - **The automatic Warn-triggered delivery is unproven end to end.** The probe
+>   run happened at Normal pressure, where the daemon deliberately stays silent;
+>   `mempilot relief` runs the identical computation with the gate removed.
 > - **Thresholds are chosen, not fitted.** No false-positive corpus exists.
 > - **Long-run soak** (72 h) is still calendar-bound.
 >
