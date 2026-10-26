@@ -303,7 +303,7 @@ var protectedPrefix = []string{
 	"Google Chrome H", // helpers belong to their browser, not to the user
 	"Code Helper",     // same for the IDE
 	"Electron Helper",
-	"VTDecoder",
+	"VTDecoder", "VTEncoder", "VideoToolbox",
 }
 
 // exeBase reduces an image path to its file name. Executable is a full path on
@@ -316,7 +316,22 @@ func exeBase(exe string) string {
 	return exe
 }
 
+// systemPrefixes are the directories macOS installs its own software into.
+// Anything running from them is the operating system, not the owner's work, and
+// closing it is never a recommendation: measured, VTEncoderXPCService at 126 MB
+// was named as releasable, and a name list cannot cover 379 ppid-1 processes
+// under these trees.
+var systemPrefixes = []string{
+	"/System/", "/usr/libexec/", "/usr/sbin/", "/Library/Apple/",
+	"/System/Library/",
+}
+
 func isProtected(exe string) bool {
+	for _, p := range systemPrefixes {
+		if strings.HasPrefix(exe, p) {
+			return true
+		}
+	}
 	base := exeBase(exe)
 	if protectedExe[exe] || protectedExe[base] {
 		return true

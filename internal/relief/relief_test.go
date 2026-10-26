@@ -691,3 +691,35 @@ func TestAbandonedCandidateSaysWhatToDo(t *testing.T) {
 		t.Errorf("no actionable command in:\n%s", txt)
 	}
 }
+
+// The operating system is never something to recommend closing. Measured:
+// VTEncoderXPCService, a ppid-1 Apple XPC service holding 126 MB, was named
+// "idle by its own CPU record, parent gone" with a kill command attached.
+//
+// A name list cannot cover this: 379 ppid-1 processes on this machine run from
+// /System, /usr/libexec or /usr/sbin. The rule is the directory they run from.
+func TestOperatingSystemIsNeverReleasable(t *testing.T) {
+	paths := []string{
+		"/System/Library/Frameworks/VideoToolbox.framework/Versions/A/XPCServices/VTEncoderXPCService.xpc/Contents/MacOS/VTEncoderXPCService",
+		"/System/Library/Frameworks/VideoToolbox.framework/Versions/A/XPCServices/VTDecoderXPCService.xpc/Contents/MacOS/VTDecoderXPCService",
+		"/usr/libexec/watchdogd",
+		"/usr/sbin/sshd",
+		"/Library/Apple/System/Library/CoreServices/WindowServer",
+		"/System/Library/CoreServices/Finder.app/Contents/MacOS/Finder",
+	}
+	for _, p := range paths {
+		if !isProtected(p) {
+			t.Errorf("%q would be named as releasable", p)
+		}
+	}
+	// The owner's own processes are still eligible.
+	for _, p := range []string{
+		"/private/tmp/orphanprobe",
+		"/Users/me/.nvm/versions/node/v26.3.0/bin/node",
+		"/opt/homebrew/bin/postgres",
+	} {
+		if isProtected(p) {
+			t.Errorf("%q was excluded by the system rule", p)
+		}
+	}
+}
