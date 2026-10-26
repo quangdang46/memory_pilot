@@ -491,3 +491,25 @@ func TestDecidedGrowthUsesTheDecidingHorizon(t *testing.T) {
 		}
 	}
 }
+
+// The ledger's text and its growth_mb must come from the same horizon.
+// Measured on a live labelled leak probe: the record said
+// growth_mb=961 and basis "grew 961 MB in total", while its text read
+// "group probe-leak grew by 240 MB" — the window, not the decision.
+func TestVerdictTextAgreesWithItsBasis(t *testing.T) {
+	// A group that grew 961 MB over its life, 240 MB of it in this window.
+	got := decidedGrowthMB(classify.LeakSuspicion, 240<<20, 961<<20, 1021<<20)
+	if got != 961 {
+		t.Fatalf("decided growth %d MB, want 961 — the test premise is wrong", got)
+	}
+	text := classify.RenderVerdict(classify.Verdict{
+		GroupKey: "probe-leak", Bucket: classify.LeakSuspicion, Confidence: 0.65,
+		Basis: []string{"sustained 1260s >= 1200s with no plateau", "grew 961 MB in total"},
+	}, got)
+	if !strings.Contains(text, "grew by 961 MB") {
+		t.Errorf("text contradicts its own basis:\n%s", text)
+	}
+	if strings.Contains(text, "grew by 240 MB") {
+		t.Errorf("text quotes the window instead of the decision:\n%s", text)
+	}
+}

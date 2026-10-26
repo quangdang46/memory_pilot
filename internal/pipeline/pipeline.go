@@ -235,7 +235,12 @@ func (p *Pipeline) CloseWindow(sys model.SystemSample) []classify.Verdict {
 					"peak_processes":      st.PeakProcessCount,
 					"slope_bps":           st.SlopeBytesS,
 				},
-				"text": classify.RenderVerdict(v, g.GrowthBytes>>20),
+				// The same horizon the verdict was decided on. Using
+				// g.GrowthBytes here printed the window's 240 MB beside a
+				// basis that said "grew 961 MB in total" — the defect this
+				// file already fixed once for the advisory path, still live in
+				// the ledger record.
+				"text": classify.RenderVerdict(v, decidedMB),
 			})
 		}
 	}
