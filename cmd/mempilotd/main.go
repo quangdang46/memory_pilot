@@ -336,7 +336,7 @@ func (h *daemonHandler) recommendRelief(s model.SystemSample, score float64) {
 	if viol := classify.PhraseTest(text); len(viol) > 0 {
 		text = "relief recommendation withheld by the phrase test"
 	}
-	h.emitReliefIfChanged(s.At, text, r.TotalRelief>>20, r.Shortfall>>20, len(cs))
+	h.emitReliefIfChanged(s.At, text, r.TotalRelief>>20, r.Shortfall>>20, len(cs), s.KernelLevel)
 }
 
 // emitReliefIfChanged records a recommendation only when it differs from the
@@ -347,16 +347,24 @@ func (h *daemonHandler) recommendRelief(s model.SystemSample, score float64) {
 // eighteen minutes, naming the same five pids and the same 601 MB, differing
 // only in the shortfall — the repeating warning the owner asked never to see
 // again, produced by the tool rather than by the machine.
-func (h *daemonHandler) emitReliefIfChanged(at time.Time, text string, reliefMB, shortfallMB int64, cands int) {
+func (h *daemonHandler) emitReliefIfChanged(at time.Time, text string, reliefMB, shortfallMB int64, cands int, level model.PressureLevel) {
 	h.mu.Lock()
 	same := reliefActionKey(text) == h.lastReliefText
+	escalated := level > h.lastReliefLevel
 	h.lastReliefAt = at
 	h.lastReliefText = reliefActionKey(text)
+	h.lastReliefLevel = level
 	h.mu.Unlock()
-	if same {
+	// Escalation is news even when the answer has not changed. Measured: the
+	// machine reached Critical for the first time in this project while the
+	// recommendation was byte-identical to one delivered at Warn, so the dedup
+	// held it back — and Critical is exactly when the owner needs to know the
+	// gap cannot be closed.
+	if same && !escalated {
 		return
 	}
 	_ = h.lg.Append(map[string]any{"kind": "relief_recommendation", "at": at,
+		"kernel_level": int(level), "escalated": escalated,
 		"shortfall_mb": shortfallMB, "total_relief_mb": reliefMB,
 		"sufficient": shortfallMB <= reliefMB, "candidates": cands, "text": text})
 }
@@ -616,6 +624,7 @@ type daemonHandler struct {
 	lastAdvisory                   map[string]time.Time
 	lastReliefAt                   time.Time
 	lastReliefText                 string
+	lastReliefLevel                model.PressureLevel
 	windowStart                    time.Time
 	lastSample                     model.SystemSample
 	lastForecast                   model.Forecast

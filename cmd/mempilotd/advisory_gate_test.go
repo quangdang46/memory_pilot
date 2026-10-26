@@ -206,6 +206,7 @@ func TestIdenticalReliefIsNotRepeated(t *testing.T) {
 		"shortfall is 3100 MB — this will NOT cover it, and nothing else can be released safely"
 	h.mu.Lock()
 	h.lastReliefText = reliefActionKey(same)
+	h.lastReliefLevel = model.LevelWarn
 	h.mu.Unlock()
 
 	count := func() int {
@@ -231,12 +232,12 @@ func TestIdenticalReliefIsNotRepeated(t *testing.T) {
 		"  /usr/bin/node (pid 64747): 120 MB, idle by its own CPU record, parent gone\n" +
 		"      to release: kill 64747\n" +
 		"shortfall is 3140 MB — this will NOT cover it, and nothing else can be released safely"
-	h.emitReliefIfChanged(time.Unix(1793000000, 0), drifted, 601, 3140, 5)
+	h.emitReliefIfChanged(time.Unix(1793000000, 0), drifted, 601, 3140, 5, model.LevelWarn)
 	if got := count(); got != before {
 		t.Errorf("an identical recommendation was recorded again (%d -> %d)", before, got)
 	}
 	// A different answer is still delivered.
-	h.emitReliefIfChanged(time.Unix(1793000300, 0), "closing 6 abandoned workload(s) would return ~900 MB", 900, 3100, 6)
+	h.emitReliefIfChanged(time.Unix(1793000300, 0), "closing 6 abandoned workload(s) would return ~900 MB", 900, 3100, 6, model.LevelWarn)
 	if got := count(); got != before+1 {
 		t.Errorf("a changed recommendation was suppressed (%d -> %d)", before, got)
 	}
@@ -264,5 +265,54 @@ shortfall is 3202 MB — this will NOT cover it, and nothing else can be release
 shortfall is 3202 MB — this will NOT cover it, and nothing else can be released safely`
 	if reliefActionKey(a) == reliefActionKey(c) {
 		t.Error("a different process set produced the same action key")
+	}
+}
+
+// Escalation is news even when the sentence is not. Measured: the machine
+// reached Critical for the first time while the recommendation was identical to
+// one already delivered at Warn, so the dedup held it back — at the moment the
+// owner most needed to know the gap cannot be closed.
+func TestEscalationOverridesDedup(t *testing.T) {
+	dir := t.TempDir()
+	lg, err := ledger.Open(dir, "ledger")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lg.Close()
+	h := &daemonHandler{lg: lg, pipe: pipeline.New(pipeline.Config{WindowS: 300}, lg, nil, nil, nil)}
+
+	const txt = "closing 5 abandoned workload(s) would return ~601 MB\n" +
+		"  /usr/bin/node (pid 64747): 120 MB, idle by its own CPU record, parent gone\n" +
+		"shortfall is 2104 MB — this will NOT cover it, and nothing else can be released safely"
+	count := func() int {
+		n := 0
+		entries, _ := os.ReadDir(dir)
+		for _, e := range entries {
+			if !strings.HasSuffix(e.Name(), ".jsonl") {
+				continue
+			}
+			b, _ := os.ReadFile(filepath.Join(dir, e.Name()))
+			for _, line := range strings.Split(string(b), "\n") {
+				if strings.Contains(line, `"relief_recommendation"`) {
+					n++
+				}
+			}
+		}
+		return n
+	}
+	h.emitReliefIfChanged(time.Unix(1793000000, 0), txt, 601, 2104, 19, model.LevelWarn)
+	atWarn := count()
+	if atWarn != 1 {
+		t.Fatalf("first recommendation not recorded (%d)", atWarn)
+	}
+	// Same sentence, same level: held.
+	h.emitReliefIfChanged(time.Unix(1793000300, 0), txt, 601, 2104, 19, model.LevelWarn)
+	if got := count(); got != atWarn {
+		t.Errorf("repeat at the same level was recorded (%d -> %d)", atWarn, got)
+	}
+	// Same sentence, escalated to Critical: delivered.
+	h.emitReliefIfChanged(time.Unix(1793000600, 0), txt, 601, 2104, 19, model.LevelCritical)
+	if got := count(); got != atWarn+1 {
+		t.Errorf("escalation to Critical was suppressed (%d -> %d)", atWarn, got)
 	}
 }
