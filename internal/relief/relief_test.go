@@ -511,3 +511,67 @@ func TestYoungProcessCannotClaimLifetimeIdle(t *testing.T) {
 		t.Errorf("a 5-minute-old process claimed lifetime idleness: %v", cs)
 	}
 }
+
+// The worst false positive the engine can produce: offering to close the agent
+// the owner is talking to. Measured live at 06:50 — three `claude` processes
+// were named "2.1.310 (pid 47742)" because the group anchor was a session id,
+// not the executable, so the group-level IsAgent flag never applied.
+func TestCodingAgentsAreNeverNamed(t *testing.T) {
+	f := GroupFacts{ObservedFor: 10 * time.Minute, Members: []Member{
+		{Pid: 47742, Exe: "claude", Footprint: 419 << 20, QuietFor: 15 * time.Second,
+			CpuTotalS: 21.8, AgeS: 28800, ParentAlive: true},
+		{Pid: 58684, Exe: "claude", Footprint: 397 << 20, QuietFor: 15 * time.Second,
+			CpuTotalS: 15.3, AgeS: 28700, ParentAlive: true},
+		{Pid: 1, Exe: "opencode.exe", Footprint: 512 << 20, QuietFor: 15 * time.Second,
+			CpuTotalS: 0.4, AgeS: 9000, ParentAlive: false, ParentGone: true},
+		{Pid: 2, Exe: "codex", Footprint: 300 << 20, QuietFor: time.Hour,
+			CpuTotalS: 1, AgeS: 9000, ParentGone: true},
+	}}
+	if cs := AssessMembers(f); len(cs) != 0 {
+		for _, c := range cs {
+			t.Errorf("named a coding agent as releasable: %s", c.Group)
+		}
+	}
+}
+
+// Lifetime evidence must not be reported as a quiet period the sampler never
+// saw. The old branch printed "done no work for 15s" beside "idle by its own
+// record for 70 hours" — two different clocks in one sentence.
+func TestLifetimeEvidenceDoesNotMentionTheWindowClock(t *testing.T) {
+	f := GroupFacts{ObservedFor: 10 * time.Minute, Members: []Member{
+		{Pid: 1, Exe: "rust-analyzer", Footprint: 914 << 20, QuietFor: 15 * time.Second,
+			CpuTotalS: 7.9, AgeS: 70 * 3600, ParentAlive: true},
+	}}
+	cs := AssessMembers(f)
+	if len(cs) != 1 {
+		t.Fatalf("%d candidates, want 1", len(cs))
+	}
+	joined := strings.Join(cs[0].Evidence, " ")
+	if strings.Contains(joined, "done no work for 15") {
+		t.Errorf("evidence quotes a 15 s window beside a 70 h lifetime claim:\n%s", joined)
+	}
+	if !strings.Contains(joined, "whole life") {
+		t.Errorf("evidence does not state the lifetime basis:\n%s", joined)
+	}
+}
+
+// Executable is a full path on macOS. A protection list matched against the
+// whole string never fires — measured live, three `claude` processes at
+// /Users/.../.local/bin/claude were named as releasable.
+func TestProtectionMatchesFullPaths(t *testing.T) {
+	cases := []string{
+		"/Users/tranquangdang21/.local/bin/claude",
+		"/Applications/Visual Studio Code.app/Contents/MacOS/Code Helper (Renderer)",
+		"/System/Library/CoreServices/Finder.app/Contents/MacOS/Finder",
+		"/Library/Apple/System/Library/CoreServices/WindowServer",
+	}
+	for _, exe := range cases {
+		if !isProtected(exe) && !isAgent(exe) {
+			t.Errorf("%q would be named as releasable", exe)
+		}
+	}
+	// A genuine orphan path stays eligible.
+	if isProtected("/tmp/orphanprobe") || isAgent("/tmp/orphanprobe") {
+		t.Error("a plain probe binary was treated as protected")
+	}
+}

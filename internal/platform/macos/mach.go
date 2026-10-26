@@ -86,6 +86,7 @@ var (
 	addrSysctlbyname     uintptr
 	addrMachContinuous   uintptr
 	addrMachTimebase     uintptr
+	addrProcPidPath      uintptr
 
 	timebaseOnce sync.Once
 	timebaseNum  uint64 = 1
@@ -108,6 +109,7 @@ func loadLibSystem() error {
 		{"proc_pidinfo", &addrProcPidinfo},
 		{"proc_pid_rusage", &addrProcPidRusage},
 		{"sysctlbyname", &addrSysctlbyname},
+		{"proc_pidpath", &addrProcPidPath},
 		{"mach_continuous_time", &addrMachContinuous},
 		{"mach_timebase_info", &addrMachTimebase},
 	} {
@@ -203,6 +205,23 @@ func bsdUID(pid int32) (int, bool) {
 		return -1, false
 	}
 	return int(bi.Uid), true
+}
+
+// executablePath returns the full path of the process image via
+// proc_pidpath(2). comm is not usable for identification: measured live, three
+// `claude` processes reported comm "2.1.310" — the bundle name, not the process
+// name — so any protection list keyed on comm missed them entirely.
+func executablePath(pid int32) (string, bool) {
+	if addrProcPidPath == 0 {
+		return "", false
+	}
+	buf := make([]byte, 4096) // PROC_PIDPATHINFO_MAXSIZE
+	r, _, _ := purego.SyscallN(addrProcPidPath, uintptr(pid),
+		uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	if r <= 0 {
+		return "", false
+	}
+	return string(buf[:int(r)]), true
 }
 
 // commName returns pbi_comm (MAXCOMLEN, NUL-padded). The kernel truncates

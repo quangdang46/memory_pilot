@@ -50,7 +50,12 @@ type ProcessIdentity struct {
 	Pid        int32
 	Ppid       int32     // parent at sample time; 0 when unreadable
 	StartTime  time.Time // proc start abstime mapped to wall clock
-	Executable string
+	Executable string    // full image path when readable, else the short name
+	// Name is the short process name (comm). Executable is the full path, which
+	// is what identification and protection lists need: comm reported three
+	// `claude` processes as "2.1.310", the bundle name, so a list keyed on it
+	// missed them entirely.
+	Name string
 }
 
 type ProcessSample struct {

@@ -135,11 +135,33 @@ func (i *Impl) Processes(ctx context.Context) (model.ProcessSnapshot, error) {
 		// read as one continuous series — the double-counting bug the spec
 		// calls out.
 		bi, bsdOK := bsdInfo(pid)
+		// A zombie has no image to read: proc_pidpath returns nothing and comm
+		// is empty, so its identity is "pid + start time" and nothing else.
+		// Measured: two such processes in one snapshot. They are not skipped —
+		// attribution needs the exit to charge the release — but they must not
+		// reach a recommendation, which needs a name to be actionable.
+		if bsdOK && bi.Status == 5 /* SZOMB */ {
+			snap.Processes = append(snap.Processes, model.ProcessSample{
+				Identity: model.ProcessIdentity{
+					Pid: pid, Ppid: int32(bi.Ppid),
+					StartTime: time.Unix(int64(bi.StartTvsec), int64(bi.StartTvusec)*1000),
+				},
+				Quality: model.QualDegraded,
+			})
+			continue
+		}
 		ident := model.ProcessIdentity{Pid: pid}
 		quality := model.QualGood
 		if bsdOK {
 			ident.StartTime = time.Unix(int64(bi.StartTvsec), int64(bi.StartTvusec)*1000)
-			ident.Executable = bi.commName()
+			// Prefer the real image path: comm is the bundle name for
+			// some processes, and protection lists keyed on it miss them.
+			if path, ok := executablePath(pid); ok {
+				ident.Executable = path
+				ident.Name = bi.commName()
+			} else {
+				ident.Executable = bi.commName()
+			}
 			ident.Ppid = int32(bi.Ppid)
 		} else {
 			quality = model.QualDegraded

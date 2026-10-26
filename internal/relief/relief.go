@@ -19,6 +19,7 @@ package relief
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"memory_pilot/internal/classify"
@@ -239,6 +240,23 @@ var protectedExe = map[string]bool{
 }
 
 // protectedPrefix covers families whose exact names vary by build.
+// agentExe is the set of coding agents. A group-level IsAgent flag is not
+// enough: measured live, three `claude` processes were named "2.1.310 (pid
+// 47742)" because the group anchor was a session id, not the executable. That
+// is the worst false positive the engine can produce — it offers to close the
+// agent the owner is talking to.
+var agentExe = map[string]bool{
+	"claude": true, "codex": true, "cursor-agent": true, "opencode": true,
+	"opencode.exe": true, "aider": true, "goose": true, "amp": true,
+	"gemini": true, "copilot": true, "continue": true, "zcode-cli": true,
+	"codeium": true, "windsurf": true, "plandex": true, "crush": true,
+}
+
+func isAgent(exe string) bool {
+	base := exeBase(exe)
+	return agentExe[exe] || agentExe[base]
+}
+
 var protectedPrefix = []string{
 	"com.apple.",      // Apple system services and frameworks
 	"Google Chrome H", // helpers belong to their browser, not to the user
@@ -247,12 +265,23 @@ var protectedPrefix = []string{
 	"VTDecoder",
 }
 
+// exeBase reduces an image path to its file name. Executable is a full path on
+// macOS ("/Users/me/.local/bin/claude"), so every list here is matched against
+// the base name; matching the whole path would never hit.
+func exeBase(exe string) string {
+	if i := strings.LastIndexByte(exe, '/'); i >= 0 {
+		return exe[i+1:]
+	}
+	return exe
+}
+
 func isProtected(exe string) bool {
-	if protectedExe[exe] {
+	base := exeBase(exe)
+	if protectedExe[exe] || protectedExe[base] {
 		return true
 	}
 	for _, p := range protectedPrefix {
-		if len(exe) >= len(p) && exe[:len(p)] == p {
+		if strings.HasPrefix(exe, p) || strings.HasPrefix(base, p) {
 			return true
 		}
 	}
@@ -272,7 +301,14 @@ func AssessMembers(f GroupFacts) []Candidate {
 		if m.Footprint < MinReliefBytes {
 			continue
 		}
-		if m.QuietFor < MinQuietForSuspicious {
+		// Two independent kinds of evidence, either of which can show the
+		// process is not working: the quiet clock (what this sampler saw) and
+		// the process's own lifetime accounting (true regardless of when the
+		// sampler started).
+		lifetimeIdle := m.CpuTotalS <= LifetimeIdleCPUS &&
+			m.AgeS >= MinLifetimeIdleS &&
+			m.CpuTotalS/m.AgeS <= LifetimeIdleRate
+		if m.QuietFor < MinQuietForSuspicious && !lifetimeIdle {
 			continue // it is working
 		}
 		// Measured: seven minutes after a restart, 43 processes were reported
@@ -284,13 +320,10 @@ func AssessMembers(f GroupFacts) []Candidate {
 		// from the process's own CPU accounting, which is why this only
 		// suppresses the first kind of evidence.
 		observedQuiet := m.QuietFor
-		lifetimeIdle := m.CpuTotalS <= LifetimeIdleCPUS &&
-			m.AgeS >= MinLifetimeIdleS &&
-			m.CpuTotalS/m.AgeS <= LifetimeIdleRate
 		if f.ObservedFor > 0 && m.QuietFor > f.ObservedFor && !lifetimeIdle {
 			continue
 		}
-		if isProtected(m.Exe) {
+		if isProtected(m.Exe) || isAgent(m.Exe) {
 			continue // never name a process whose loss breaks the session
 		}
 		c := Candidate{
@@ -319,6 +352,9 @@ func AssessMembers(f GroupFacts) []Candidate {
 		if lifetimeIdle && quiet < MinQuietForAbandoned {
 			quiet = MinQuietForAbandoned // lifetime evidence clears the bar
 		}
+		if lifetimeIdle && quiet < MinQuietForSuspicious {
+			quiet = MinQuietForSuspicious
+		}
 		switch {
 		case m.ParentGone && quiet >= MinQuietForAbandoned:
 			c.State = StateAbandoned
@@ -332,7 +368,7 @@ func AssessMembers(f GroupFacts) []Candidate {
 			c.Evidence = append(c.Evidence,
 				fmt.Sprintf("parent gone, quiet %s — short of the %s bar",
 					m.QuietFor.Round(time.Second), MinQuietForAbandoned))
-		case quiet >= MinQuietForAbandoned && m.ParentAlive:
+		case quiet >= MinQuietForAbandoned && m.ParentAlive && !lifetimeIdle:
 			// A live parent that is not using it. This is the rust-analyzer
 			// case: the session that spawned it is still open but idle, and the
 			// child has held gigabytes without doing anything for hours.
@@ -343,7 +379,7 @@ func AssessMembers(f GroupFacts) []Candidate {
 				"parent still running, but this process has done no work for "+
 					m.QuietFor.Round(time.Second).String()+" — closing it loses nothing "+
 					"it is currently doing, though the parent may restart it")
-		case quiet >= MinQuietForAbandoned:
+		case quiet >= MinQuietForAbandoned && !lifetimeIdle:
 			// The parent is not in coverage, so whether anything owns this
 			// process is unknown. Saying "parent gone" here would be a guess,
 			// and the first live run made exactly that guess about Finder.
@@ -353,6 +389,16 @@ func AssessMembers(f GroupFacts) []Candidate {
 			c.Evidence = append(c.Evidence,
 				"parent not observed — it may have exited or may be outside "+
 					"sampling coverage; this is not evidence either way")
+		case lifetimeIdle && m.ParentAlive:
+			// A live parent that is not using it, proven by the process's own
+			// accounting rather than by a window this sampler may have missed.
+			c.State = StateSuspicious
+			c.AbandonmentConfidence = 0.55
+			c.InterruptionRisk = 0.45
+			c.Evidence = append(c.Evidence,
+				"the parent is running but has not used this process in its "+
+					"whole life; closing it loses nothing it is currently doing, "+
+					"though the parent may restart it")
 		default:
 			c.AbandonmentConfidence = 0.3
 		}

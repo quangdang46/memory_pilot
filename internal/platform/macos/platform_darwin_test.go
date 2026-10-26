@@ -4,6 +4,7 @@ package macos
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 )
@@ -95,9 +96,33 @@ func TestLiveCommandNameNonEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 	snap, _ := p.Processes(context.Background())
+	unnamed := 0
 	for _, s := range snap.Processes {
-		if len(s.Identity.Executable) > 16 {
-			t.Errorf("comm longer than MAXCOMLEN: %q", s.Identity.Executable)
+		if s.Identity.Executable == "" && s.Identity.Name == "" {
+			unnamed++
 		}
+		// Name is comm, bounded at MAXCOMLEN (16). Executable is the full image
+		// path, which is what identification needs — comm reported three
+		// `claude` processes as "2.1.310", the bundle name.
+		if s.Identity.Name != "" && len(s.Identity.Name) > 16 {
+			t.Errorf("comm longer than MAXCOMLEN: %q", s.Identity.Name)
+		}
+	}
+	// The full path must be present for most processes; comm is a fallback for
+	// the ones proc_pidpath refuses.
+	paths := 0
+	for _, s := range snap.Processes {
+		if strings.HasPrefix(s.Identity.Executable, "/") {
+			paths++
+		}
+	}
+	if paths < len(snap.Processes)/2 {
+		t.Errorf("only %d/%d processes have a full path", paths, len(snap.Processes))
+	}
+	// A handful of zombies and kernel threads have no readable image. They
+	// must stay rare: if most processes are nameless the sampler is broken.
+	if unnamed > len(snap.Processes)/10 {
+		t.Errorf("%d/%d processes have neither a path nor a comm",
+			unnamed, len(snap.Processes))
 	}
 }
