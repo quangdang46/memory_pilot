@@ -335,13 +335,29 @@ func (h *daemonHandler) recommendRelief(s model.SystemSample, score float64) {
 	if viol := classify.PhraseTest(text); len(viol) > 0 {
 		text = "relief recommendation withheld by the phrase test"
 	}
+	h.emitReliefIfChanged(s.At, text, r.TotalRelief>>20, r.Shortfall>>20, len(cs))
+}
+
+// emitReliefIfChanged records a recommendation only when it differs from the
+// last one delivered.
+//
+// The cooldown bounds how often the daemon computes; this bounds how often the
+// owner is told the same thing. Measured: five identical recommendations in
+// eighteen minutes, naming the same five pids and the same 601 MB, differing
+// only in the shortfall — the repeating warning the owner asked never to see
+// again, produced by the tool rather than by the machine.
+func (h *daemonHandler) emitReliefIfChanged(at time.Time, text string, reliefMB, shortfallMB int64, cands int) {
 	h.mu.Lock()
-	h.lastReliefAt = s.At
+	same := text == h.lastReliefText
+	h.lastReliefAt = at
+	h.lastReliefText = text
 	h.mu.Unlock()
-	_ = h.lg.Append(map[string]any{"kind": "relief_recommendation", "at": s.At,
-		"severity": r.Severity, "shortfall_mb": r.Shortfall >> 20,
-		"total_relief_mb": r.TotalRelief >> 20, "sufficient": r.Sufficient(),
-		"candidates": len(cs), "text": text})
+	if same {
+		return
+	}
+	_ = h.lg.Append(map[string]any{"kind": "relief_recommendation", "at": at,
+		"shortfall_mb": shortfallMB, "total_relief_mb": reliefMB,
+		"sufficient": shortfallMB <= reliefMB, "candidates": cands, "text": text})
 }
 
 // buildRecommendation is the whole L1 computation, with no gate on pressure and
@@ -580,6 +596,7 @@ type daemonHandler struct {
 	mu                             sync.Mutex
 	lastAdvisory                   map[string]time.Time
 	lastReliefAt                   time.Time
+	lastReliefText                 string
 	windowStart                    time.Time
 	lastSample                     model.SystemSample
 	lastForecast                   model.Forecast

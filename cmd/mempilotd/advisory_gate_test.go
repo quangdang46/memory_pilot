@@ -185,3 +185,50 @@ func TestAdvisoryRecordsItsPressure(t *testing.T) {
 		t.Fatal("no advisory was written — the test did not exercise the path")
 	}
 }
+
+// The same answer must not be delivered twice. Measured: five identical
+// recommendations in eighteen minutes naming the same five pids and the same
+// 601 MB — the repeating warning the owner asked never to see again, produced
+// by the tool rather than the machine.
+func TestIdenticalReliefIsNotRepeated(t *testing.T) {
+	dir := t.TempDir()
+	lg, err := ledger.Open(dir, "ledger")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lg.Close()
+	h := &daemonHandler{lg: lg, pipe: pipeline.New(pipeline.Config{WindowS: 300}, lg, nil, nil, nil)}
+
+	// Two identical texts: the second must not be recorded.
+	h.mu.Lock()
+	h.lastReliefText = "closing 5 abandoned workload(s) would return ~601 MB"
+	h.mu.Unlock()
+
+	count := func() int {
+		n := 0
+		entries, _ := os.ReadDir(dir)
+		for _, e := range entries {
+			if !strings.HasSuffix(e.Name(), ".jsonl") {
+				continue
+			}
+			b, _ := os.ReadFile(filepath.Join(dir, e.Name()))
+			for _, line := range strings.Split(string(b), "\n") {
+				if strings.Contains(line, `"relief_recommendation"`) {
+					n++
+				}
+			}
+		}
+		return n
+	}
+	before := count()
+	// Drive the gate directly with the same text it just recorded.
+	h.emitReliefIfChanged(time.Unix(1793000000, 0), "closing 5 abandoned workload(s) would return ~601 MB", 601, 3100, 5)
+	if got := count(); got != before {
+		t.Errorf("an identical recommendation was recorded again (%d -> %d)", before, got)
+	}
+	// A different answer is still delivered.
+	h.emitReliefIfChanged(time.Unix(1793000300, 0), "closing 6 abandoned workload(s) would return ~900 MB", 900, 3100, 6)
+	if got := count(); got != before+1 {
+		t.Errorf("a changed recommendation was suppressed (%d -> %d)", before, got)
+	}
+}
