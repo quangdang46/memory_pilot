@@ -1241,3 +1241,85 @@ func TestUnknownLaunchdStateMakesNoClaim(t *testing.T) {
 		}
 	}
 }
+
+// Identity moved from comm to the full image path, and every table in this
+// package is written in comm terms. Measured: `report` began showing
+// "/Applications/WezTerm.app/Contents/MacOS/wezterm-gui" as a group label with
+// forty processes under it, so the anchor walk matched nothing and the
+// terminal exemption never fired.
+func TestAnchorTablesMatchFullPaths(t *testing.T) {
+	cases := []struct{ path, want string }{
+		{"/Applications/WezTerm.app/Contents/MacOS/wezterm-gui", "wezterm-gui"},
+		{"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "Google Chrome"},
+		{"/Applications/Visual Studio Code.app/Contents/MacOS/Code", "Code"},
+		{"/Users/me/.local/share/claude/versions/2.1.310", "2.1.310"},
+	}
+	for _, c := range cases {
+		if got := exeBase(c.path); got != c.want {
+			t.Errorf("exeBase(%q) = %q, want %q", c.path, got, c.want)
+		}
+	}
+	for _, p := range []string{
+		"/Applications/WezTerm.app/Contents/MacOS/wezterm-gui",
+		"/System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal",
+		"/usr/sbin/sshd",
+	} {
+		if !IsTerminalGroup(p) {
+			t.Errorf("IsTerminalGroup(%q) = false — the terminal exemption is off", p)
+		}
+	}
+	if IsTerminalGroup("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome") {
+		t.Error("a browser was classified as a terminal")
+	}
+	for _, p := range []string{
+		"/Applications/WezTerm.app/Contents/MacOS/wezterm-gui",
+		"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+		"/Applications/Visual Studio Code.app/Contents/MacOS/Code",
+		"/Users/me/.local/share/claude/versions/2.1.310",
+	} {
+		if !isAnchorName(p) {
+			t.Errorf("isAnchorName(%q) = false — the anchor walk will merge groups", p)
+		}
+	}
+}
+
+// Group labels are the anchor table's spelling, not the image path. Measured:
+// `report` printed "/Applications/WezTerm.app/Contents/MacOS/wezterm-gui" as a
+// group label, which no reader can scan and which never matches the terminal
+// exemption either.
+func TestGroupLabelIsTheTableName(t *testing.T) {
+	a := New(60)
+	// wezterm (anchor) -> zsh -> node (the workload). The exe names must be in
+	// the snapshot: grouping is decided on the first sighting of each process.
+	exes := map[int32]string{
+		100: "/Applications/WezTerm.app/Contents/MacOS/wezterm-gui",
+		200: "/bin/zsh",
+		300: "/Users/me/.nvm/versions/node/v26.3.0/bin/node",
+	}
+	mk := func() model.ProcessSnapshot {
+		sn := snapWithParents([][3]any{
+			{int32(100), int32(1), uint64(400 << 20)},
+			{int32(200), int32(100), uint64(120 << 20)},
+			{int32(300), int32(200), uint64(220 << 20)},
+		})
+		for i := range sn.Processes {
+			sn.Processes[i].Identity.Executable = exes[sn.Processes[i].Identity.Pid]
+		}
+		return sn
+	}
+	a.Observe(mk(), sys(200000))
+	a.Observe(mk(), sys(200000))
+
+	labels := map[string]bool{}
+	for _, m := range a.Members() {
+		labels[m.Group] = true
+	}
+	if !labels["wezterm-gui"] {
+		t.Errorf("no group labelled wezterm-gui; saw %v", labels)
+	}
+	for l := range labels {
+		if strings.Contains(l, "/") {
+			t.Errorf("group label is an image path: %q", l)
+		}
+	}
+}

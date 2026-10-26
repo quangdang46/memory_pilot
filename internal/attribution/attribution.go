@@ -6,6 +6,7 @@ package attribution
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -806,12 +807,27 @@ func (a *Attributor) nearestAnchor(id Identity) string {
 			break
 		}
 		parent := a.series[key].id
-		if isAnchorName(parent.Exe) {
-			return parent.Exe
+		if name, ok := anchorNameFor(parent.Exe); ok {
+			return name // the table name, never the image path
 		}
 		cur = parent
 	}
+	if name, ok := anchorNameFor(id.Exe); ok {
+		// A session root that is itself an anchor (wezterm started by launchd,
+		// as every terminal on macOS is) must still be labelled with the table
+		// name. Measured: the label was the full image path.
+		return name
+	}
 	if id.Exe != "" {
+		// A session root that is not in the anchor table: label it with its
+		// short name. Two unrelated processes can share a name, and merging
+		// them is the failure §4.3 calls out — but a full image path is not a
+		// label either. Measured: `report` printed
+		// "/System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow"
+		// as a group name. The pid prefix keeps same-named roots distinct.
+		if base := exeBase(id.Exe); base != "" {
+			return base
+		}
 		return id.Exe
 	}
 	return fmt.Sprintf("pid-%d", id.Pid)
@@ -829,9 +845,54 @@ func identityKeyOf(a *Attributor, pid int32) string {
 	return ""
 }
 
-func isAnchorName(name string) bool {
+// exeBase is the file name of an image path. Executable carries the full path
+// since identity moved off comm; the anchor and terminal tables are written in
+// comm terms ("wezterm-gui", "Code"), so every comparison goes through here.
+func exeBase(exe string) string {
+	if i := strings.LastIndexByte(exe, '/'); i >= 0 {
+		return exe[i+1:]
+	}
+	return exe
+}
+
+// isAnchorName matches any path segment, not just the file name. Claude Code
+// stores its builds at ~/.local/share/claude/versions/<version>, so the running
+// image's base name is "2.1.310" and a base-name check reports the agent as an
+// anonymous process — the same failure the relief protection list had.
+// anchorNameFor returns the table entry an image belongs to. Group labels are
+// these names — the anchor table's spelling — never the image path: measured,
+// `report` printed "/Applications/WezTerm.app/Contents/MacOS/wezterm-gui" as a
+// label, which no reader can scan and which never matches the terminal
+// exemption either.
+func anchorNameFor(exe string) (string, bool) {
+	base := exeBase(exe)
 	for _, a := range AnchorTable {
-		if name == a {
+		if base == a || exe == a {
+			return a, true
+		}
+	}
+	for _, seg := range strings.Split(exe, "/") {
+		for _, a := range AnchorTable {
+			if seg == a {
+				return a, true
+			}
+		}
+	}
+	return "", false
+}
+
+func isAnchorName(name string) bool {
+	_, ok := anchorNameFor(name)
+	return ok
+}
+
+// segmentIn reports whether any path segment of exe is in table.
+func segmentIn(exe string, table map[string]bool) bool {
+	if table[exe] || table[exeBase(exe)] {
+		return true
+	}
+	for _, seg := range strings.Split(exe, "/") {
+		if table[seg] {
 			return true
 		}
 	}
@@ -875,7 +936,12 @@ var TerminalAnchors = map[string]bool{
 
 // IsTerminalGroup reports whether a group anchor is a terminal or shell
 // session rather than an application.
-func IsTerminalGroup(anchor string) bool { return TerminalAnchors[anchor] }
+//
+// Anchors are full image paths since identity moved off comm. Accepting only
+// the bare name silently disabled the terminal exemption: measured, `report`
+// showed "/Applications/WezTerm.app/Contents/MacOS/wezterm-gui" as a group
+// with 40 processes under it, and the advisory gate no longer recognised it.
+func IsTerminalGroup(anchor string) bool { return segmentIn(anchor, TerminalAnchors) }
 
 func maxInt64(a, b int64) int64 {
 	if a > b {
