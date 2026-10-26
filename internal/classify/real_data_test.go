@@ -34,3 +34,36 @@ func TestObservedFalseAdvisoriesStaySilent(t *testing.T) {
 		}
 	}
 }
+
+// The four false-positive advisories of 2026-10-26, replayed from their exact
+// recorded signals. Each was produced by an inflated NetGrowthBytes — a slope
+// extrapolation fitted across a coverage flip — so with the attribution fix the
+// net is zero and the classifier has nothing to act on.
+//
+// Recorded at 09:34:56 for group Code: it held ~300 MB, grew 14 MB in the
+// window and 17 MB over its life, and reported net_growth_bytes 4051939249
+// (3864 MB). The threshold is 256 MB.
+func TestInflatedNetGrowthWasTheOnlyThingBehindTheAdvisory(t *testing.T) {
+	base := SeriesStats{
+		GroupKey: "Code", SlopeBytesS: 3376616, ActivityCorr: 0,
+		ActivityS: 0, QuietS: 585, DurationS: 585, PlateauS: 225,
+		GrowthBytes: 14123008, ReleaseBytes: 28835840,
+		LongGrowthBytes: 17498112,
+		ProcessCount:    12, PeakProcessCount: 12, LongPeakProcesses: 12,
+		CoverageRatio: 1.0,
+	}
+	// With the inflated net, the classifier fires — this pins the mechanism.
+	inflated := base
+	inflated.NetGrowthBytes = 4051939249
+	if v := Classify(inflated); v.Bucket != SubprocessAccumulation {
+		t.Fatalf("with net 3864 MB the classifier returned %s, not accumulation; "+
+			"this test no longer reproduces the defect it was written for", v.Bucket)
+	}
+	// With the net the fixed attribution now produces, it does not.
+	fixed := base
+	fixed.NetGrowthBytes = 0
+	if v := Classify(fixed); v.Bucket == SubprocessAccumulation || v.Bucket == LeakSuspicion {
+		t.Errorf("with net 0 the classifier still produced %s (%v) — the advisory "+
+			"did not depend on the inflated net after all", v.Bucket, v.Basis)
+	}
+}
