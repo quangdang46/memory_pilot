@@ -1095,9 +1095,18 @@ func (h *history) addTrend(at time.Time, total int64) {
 }
 
 // trendGrowthBytes is what the group is on pace to add across the trend
-// window, which is the quantity the leak branch's threshold is expressed in.
+// window, which is the quantity the accumulation and leak thresholds are
+// expressed in.
+//
+// It must be zero unless the fit is a trend. fitSlope already decides that —
+// slope above 200 KB/s AND R² above 0.5 — but it returns the slope whether or
+// not the verdict passed, and this function used the raw slope. Measured: the
+// `Code` group held ~300 MB, grew 19 MB in a window, fit a noisy 3.25 MB/s
+// line, and was reported as 3900 MB of growth — enough to cross every
+// threshold and produce a subprocess-accumulation advisory about an editor
+// sitting still.
 func (h *history) trendGrowthBytes() int64 {
-	if h.slopeBps <= 0 {
+	if h.slopeBps <= 0 || !h.climbing {
 		return 0
 	}
 	return int64(h.slopeBps * trendWindowS)

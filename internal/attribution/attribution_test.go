@@ -1370,3 +1370,20 @@ func TestTransientProcessSpikeFadesQuickly(t *testing.T) {
 			"spike is being reported as accumulation", peak)
 	}
 }
+
+// Extrapolating a noisy fit produces an enormous number. Measured: the `Code`
+// group held ~300 MB, grew 19 MB in a window, fit a 3.25 MB/s line with R²
+// below the 0.5 bar, and was reported as 3900 MB of growth — enough to cross
+// every threshold and produce a subprocess-accumulation advisory about an
+// editor sitting still.
+func TestNoisyFitDoesNotBecomeGrowth(t *testing.T) {
+	h := &history{slopeBps: 3.25 * 1024 * 1024, climbing: false}
+	if got := h.trendGrowthBytes(); got != 0 {
+		t.Errorf("a fit that failed the trend test extrapolated to %d MB", got>>20)
+	}
+	// A real trend still extrapolates.
+	h.climbing = true
+	if got := h.trendGrowthBytes(); got <= 0 {
+		t.Errorf("a confirmed trend extrapolated to %d", got)
+	}
+}
