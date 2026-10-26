@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -348,9 +349,9 @@ func (h *daemonHandler) recommendRelief(s model.SystemSample, score float64) {
 // again, produced by the tool rather than by the machine.
 func (h *daemonHandler) emitReliefIfChanged(at time.Time, text string, reliefMB, shortfallMB int64, cands int) {
 	h.mu.Lock()
-	same := text == h.lastReliefText
+	same := reliefActionKey(text) == h.lastReliefText
 	h.lastReliefAt = at
-	h.lastReliefText = text
+	h.lastReliefText = reliefActionKey(text)
 	h.mu.Unlock()
 	if same {
 		return
@@ -406,6 +407,24 @@ func (h *daemonHandler) buildRecommendation(s model.SystemSample) *relief.Recomm
 		}
 	}
 	return r
+}
+
+// reliefActionKey reduces a recommendation to what the owner would act on: the
+// named pids and the relief they add up to. The shortfall moves by tens of MB
+// between samples while nothing the owner can do has changed — measured, two
+// recommendations five minutes apart differed only in "3134 MB" against "3202
+// MB", with the same five pids and the same 601 MB. Comparing whole sentences
+// treated that noise as news.
+func reliefActionKey(text string) string {
+	var b strings.Builder
+	for _, line := range strings.Split(text, "\n") {
+		// The per-process lines and the total; not the shortfall.
+		if strings.Contains(line, "(pid ") || strings.HasPrefix(line, "closing ") {
+			b.WriteString(strings.TrimSpace(line))
+			b.WriteByte('\n')
+		}
+	}
+	return b.String()
 }
 
 // pressureName renders a level for the record.

@@ -200,8 +200,12 @@ func TestIdenticalReliefIsNotRepeated(t *testing.T) {
 	h := &daemonHandler{lg: lg, pipe: pipeline.New(pipeline.Config{WindowS: 300}, lg, nil, nil, nil)}
 
 	// Two identical texts: the second must not be recorded.
+	const same = "closing 5 abandoned workload(s) would return ~601 MB\n" +
+		"  /usr/bin/node (pid 64747): 120 MB, idle by its own CPU record, parent gone\n" +
+		"      to release: kill 64747\n" +
+		"shortfall is 3100 MB — this will NOT cover it, and nothing else can be released safely"
 	h.mu.Lock()
-	h.lastReliefText = "closing 5 abandoned workload(s) would return ~601 MB"
+	h.lastReliefText = reliefActionKey(same)
 	h.mu.Unlock()
 
 	count := func() int {
@@ -222,7 +226,12 @@ func TestIdenticalReliefIsNotRepeated(t *testing.T) {
 	}
 	before := count()
 	// Drive the gate directly with the same text it just recorded.
-	h.emitReliefIfChanged(time.Unix(1793000000, 0), "closing 5 abandoned workload(s) would return ~601 MB", 601, 3100, 5)
+	// Same action, different shortfall: must be suppressed.
+	drifted := "closing 5 abandoned workload(s) would return ~601 MB\n" +
+		"  /usr/bin/node (pid 64747): 120 MB, idle by its own CPU record, parent gone\n" +
+		"      to release: kill 64747\n" +
+		"shortfall is 3140 MB — this will NOT cover it, and nothing else can be released safely"
+	h.emitReliefIfChanged(time.Unix(1793000000, 0), drifted, 601, 3140, 5)
 	if got := count(); got != before {
 		t.Errorf("an identical recommendation was recorded again (%d -> %d)", before, got)
 	}
@@ -230,5 +239,30 @@ func TestIdenticalReliefIsNotRepeated(t *testing.T) {
 	h.emitReliefIfChanged(time.Unix(1793000300, 0), "closing 6 abandoned workload(s) would return ~900 MB", 900, 3100, 6)
 	if got := count(); got != before+1 {
 		t.Errorf("a changed recommendation was suppressed (%d -> %d)", before, got)
+	}
+}
+
+// Two recommendations that differ only in the shortfall are the same news.
+// Measured: five minutes apart, same five pids, same 601 MB, "3134 MB" against
+// "3202 MB".
+func TestShortfallDriftIsNotNews(t *testing.T) {
+	a := `closing 5 abandoned workload(s) would return ~601 MB
+  /usr/bin/node (pid 64747): 120 MB, idle by its own CPU record, parent gone
+      to release: kill 64747
+shortfall is 3134 MB — this will NOT cover it, and nothing else can be released safely`
+	b := `closing 5 abandoned workload(s) would return ~601 MB
+  /usr/bin/node (pid 64747): 120 MB, idle by its own CPU record, parent gone
+      to release: kill 64747
+shortfall is 3202 MB — this will NOT cover it, and nothing else can be released safely`
+	if reliefActionKey(a) != reliefActionKey(b) {
+		t.Errorf("shortfall drift changed the action key:\n%q\nvs\n%q",
+			reliefActionKey(a), reliefActionKey(b))
+	}
+	// A different process set is different news.
+	c := `closing 1 abandoned workload(s) would return ~900 MB
+  /usr/bin/other (pid 999): 900 MB, no CPU for 2h0m0s, parent gone
+shortfall is 3202 MB — this will NOT cover it, and nothing else can be released safely`
+	if reliefActionKey(a) == reliefActionKey(c) {
+		t.Error("a different process set produced the same action key")
 	}
 }
