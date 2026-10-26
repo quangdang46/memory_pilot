@@ -201,12 +201,47 @@ func report(args []string) {
 	if latestVerdict != nil && notable(latestVerdict) > 0 {
 		fmt.Printf("\nclassification: %s\n", strOf(latestVerdict["text"]))
 	}
+	// Why nothing was announced. A quiet window and a broken one look identical
+	// from the outside; this line is what tells them apart.
+	if d := latestAdvisoryDecision(recs); d != nil {
+		n, _ := d["verdicts"].(float64)
+		em, _ := d["emitted"].([]any)
+		sup, _ := d["suppressed"].([]any)
+		fmt.Printf("\nadvisory path: %d verdict(s) — %d announced, %d held back\n",
+			int(n), len(em), len(sup))
+		reasons := map[string]int{}
+		var order []string
+		for _, raw := range sup {
+			m, _ := raw.(map[string]any)
+			r := strOf(m["why"])
+			if r == "" {
+				continue
+			}
+			if reasons[r] == 0 {
+				order = append(order, r)
+			}
+			reasons[r]++
+		}
+		for _, r := range order {
+			fmt.Printf("  %dx %s\n", reasons[r], r)
+		}
+	}
 	if len(advisories) > 0 {
 		fmt.Println("\nlatest advisories")
 		for _, a := range advisories {
 			fmt.Printf("  [%s] %s\n", strOf(a["strength"]), strOf(a["text"]))
 		}
 	}
+}
+
+// latestAdvisoryDecision returns the newest advisory_decision row.
+func latestAdvisoryDecision(recs []map[string]any) map[string]any {
+	for _, r := range recs {
+		if strOf(r["kind"]) == "advisory_decision" {
+			return r
+		}
+	}
+	return nil
 }
 
 // olderThan reports whether a ledger record's timestamp is more than d ago.

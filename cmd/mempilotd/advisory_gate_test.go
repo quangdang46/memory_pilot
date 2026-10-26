@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -355,5 +356,69 @@ func TestAdvisoryPathProducesOutputForARealVerdict(t *testing.T) {
 	if advisories != 1 {
 		t.Errorf("%d advisories written for a leak verdict at Warn, want 1 — "+
 			"the path is silent for the verdict it exists to deliver", advisories)
+	}
+}
+
+// Every verdict must leave a trace saying what happened to it. Without this,
+// "no advisory" and "the advisory path is broken" are the same observation —
+// which is how four defects hid in this file: dedup blocking escalation, a rate
+// limit refusing at Critical, an executor reporting advisories it never wrote,
+// and policy offering an advisory it never recorded.
+func TestEveryVerdictRecordsItsOutcome(t *testing.T) {
+	dir := t.TempDir()
+	lg, err := ledger.Open(dir, "ledger")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lg.Close()
+	h := &daemonHandler{lg: lg, lastAdvisory: map[string]time.Time{}}
+	s := model.SystemSample{At: time.Unix(1793000000, 0), PageBytes: 16384,
+		FreePages: 200000, KernelLevel: model.LevelNormal}
+	vs := []classify.Verdict{
+		{GroupKey: "wezterm-gui", Bucket: classify.LeakSuspicion, GrowthMB: 900},
+		{GroupKey: "quiet-cache", Bucket: classify.CacheOrRetrievable, GrowthMB: 20},
+		{GroupKey: "tiny-work", Bucket: classify.WorkloadGrowth, GrowthMB: 5},
+	}
+	h.recordVerdicts(s, vs, nil)
+
+	entries, _ := os.ReadDir(dir)
+	var row map[string]any
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".jsonl") {
+			continue
+		}
+		b, _ := os.ReadFile(filepath.Join(dir, e.Name()))
+		for _, line := range strings.Split(string(b), "\n") {
+			var m map[string]any
+			if json.Unmarshal([]byte(line), &m) != nil || m["kind"] != "advisory_decision" {
+				continue
+			}
+			row = m
+		}
+	}
+	if row == nil {
+		t.Fatal("no advisory_decision row — a quiet window cannot be told from a broken one")
+	}
+	if n, _ := row["verdicts"].(float64); int(n) != 3 {
+		t.Errorf("verdicts = %v, want 3", row["verdicts"])
+	}
+	sup, _ := row["suppressed"].([]any)
+	if len(sup) != 3 {
+		t.Fatalf("%d suppressions recorded, want 3 (one per verdict)", len(sup))
+	}
+	for _, raw := range sup {
+		m, _ := raw.(map[string]any)
+		if m["why"] == "" || m["why"] == nil {
+			t.Errorf("suppression with no reason: %v", m)
+		}
+	}
+	// The reasons must be specific, not one catch-all.
+	seen := map[string]bool{}
+	for _, raw := range sup {
+		m, _ := raw.(map[string]any)
+		seen[fmt.Sprint(m["why"])] = true
+	}
+	if len(seen) < 2 {
+		t.Errorf("only %d distinct reasons across three different verdicts: %v", len(seen), seen)
 	}
 }

@@ -435,6 +435,12 @@ func reliefActionKey(text string) string {
 	return b.String()
 }
 
+// suppressedWhy is one verdict's reason for not becoming an advisory.
+func suppressedWhy(v classify.Verdict, why string) map[string]any {
+	return map[string]any{"group": v.GroupKey, "bucket": v.Bucket,
+		"growth_mb": v.GrowthMB, "why": why}
+}
+
 // pressureName renders a level for the record.
 func pressureName(l model.PressureLevel) string {
 	switch l {
@@ -498,6 +504,12 @@ func (h *daemonHandler) recordVerdicts(s model.SystemSample, vs []classify.Verdi
 	// at 62% CPU, Chrome loading pages). That is the warning board the owner
 	// asked never to see again.
 	advisoryAt := h.advisoriesThisWindow(s.At)
+	// Every verdict gets a recorded outcome, not just the ones that became
+	// advisories. Without this, "no advisory" is indistinguishable from
+	// "the advisory path is broken" — the confusion that hid four separate
+	// defects in this file: dedup blocking escalation, a rate limit refusing
+	// at Critical, and an executor reporting advisories it never wrote.
+	var emitted, suppressed []map[string]any
 	for _, v := range vs {
 		// Only the shapes that need attention become advisories. A cache that
 		// released as much as it grew, or growth explained by CPU work, is a
@@ -511,6 +523,7 @@ func (h *daemonHandler) recordVerdicts(s model.SystemSample, vs []classify.Verdi
 		// here at 86 descendants and 8 GB, all of it the owner's own editors,
 		// agents and builds. The group is still measured and still reported.
 		if attribution.IsTerminalGroup(v.GroupKey) {
+			suppressed = append(suppressed, suppressedWhy(v, "terminal group"))
 			continue
 		}
 		switch v.Bucket {
@@ -519,10 +532,13 @@ func (h *daemonHandler) recordVerdicts(s model.SystemSample, vs []classify.Verdi
 		case classify.WorkloadGrowth:
 			// only if it is large enough to matter
 			if v.GrowthMB < advisoryWorkloadMB {
+				suppressed = append(suppressed, suppressedWhy(v, fmt.Sprintf(
+					"workload growth %d MB below the %d MB floor", v.GrowthMB, advisoryWorkloadMB)))
 				continue
 			}
 		default:
-			continue // cache, unknown: recorded, not announced
+			suppressed = append(suppressed, suppressedWhy(v, "bucket is not advisory-shaped"))
+			continue
 		}
 		// Growth alone is not news while the machine is comfortable. An
 		// advisory says "here is something you could do", and a growing group
@@ -530,10 +546,13 @@ func (h *daemonHandler) recordVerdicts(s model.SystemSample, vs []classify.Verdi
 		// per hour: repeating the same sentence every five minutes is how a
 		// warning list becomes something the reader stops seeing.
 		if !relief.ShouldRecommend(v.Bucket, s.KernelLevel >= model.LevelWarn, false) {
+			suppressed = append(suppressed, suppressedWhy(v, "no pressure and nothing releasable"))
 			continue
 		}
 		if last, ok := advisoryAt[v.GroupKey]; ok &&
 			s.At.Sub(last) < advisoryRepeatEvery {
+			suppressed = append(suppressed, suppressedWhy(v, fmt.Sprintf(
+				"already advised %s ago (limit %s)", s.At.Sub(last).Round(time.Second), advisoryRepeatEvery)))
 			continue
 		}
 		strength := "informational"
@@ -556,8 +575,17 @@ func (h *daemonHandler) recordVerdicts(s model.SystemSample, vs []classify.Verdi
 			"kernel_level": int(s.KernelLevel), "free_mb": (s.FreePages * s.PageBytes) >> 20,
 			"strength": strength, "text": text,
 			"group": v.GroupKey, "bucket": v.Bucket, "confidence": v.Confidence})
+		emitted = append(emitted, map[string]any{
+			"group": v.GroupKey, "bucket": v.Bucket, "growth_mb": v.GrowthMB})
 		h.markAdvised(v.GroupKey, s.At)
 	}
+	// The heartbeat. One row per window saying what the advisory path did with
+	// every verdict it saw: emitted, or held back and why. Without it, a quiet
+	// window and a broken one produce the same observable — no advisories — and
+	// four defects hid behind exactly that in this file.
+	_ = h.lg.Append(map[string]any{"kind": "advisory_decision", "at": s.At,
+		"verdicts": len(vs), "emitted": emitted, "suppressed": suppressed,
+		"pressure": int(s.KernelLevel)})
 	for _, ar := range results {
 		_ = h.lg.Append(map[string]any{"kind": "action_effect", "at": s.At,
 			"action": string(ar.Kind), "action_id": ar.ActionID,
@@ -725,7 +753,8 @@ func (h *daemonHandler) Handle(ctx context.Context, req ipc.Request) (ipc.Respon
 			return ipc.Response{V: ipc.ProtocolVersion, Error: err.Error()}, nil
 		}
 		want := map[string]bool{"decision": true, "pressure_transition": true,
-			"advisory": true, "action_result": true, "action_effect": true,
+			"advisory": true, "advisory_decision": true,
+			"action_result": true, "action_effect": true,
 			"attribution": true, "classification": true,
 			"policy_candidates": true, "policy_no_action": true}
 		// Scan by age, not by record count. At a 5 s system cadence plus a
