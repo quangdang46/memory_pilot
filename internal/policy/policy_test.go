@@ -95,22 +95,23 @@ func TestBreakerSilencesKind(t *testing.T) {
 	}
 }
 
-// A planned advisory is not "no action". The Warn branch returned early with
-// NoAction at its zero value (true), so the pipeline skipped the advisory it
-// had just planned. Measured in the field: 50 Prevent samples recorded
-// policy_no_action with candidates=[emit_advisory] and nothing executed.
-func TestWarnAdvisoryIsNotNoAction(t *testing.T) {
+// Warn produces no action candidate, and says so. It used to offer
+// emit_advisory as one, which the executor reported as "advisory recorded" —
+// measured 40 times — while no actor was ever wired to write anything and the
+// ledger received zero advisories. Advisories are produced by recordVerdicts
+// from the verdicts themselves; policy must not claim to have performed one.
+func TestWarnClaimsNoActionButTheTextStillReachesTheOwner(t *testing.T) {
 	e := NewEngine(ModeObserve)
 	d := e.Evaluate(Input{
 		Pressure: model.PressureState{Level: model.LevelWarn, Score: 0.4},
 		Now:      time.Unix(0, 0),
 	})
-	if len(d.Candidates) == 0 {
-		t.Fatal("Warn produced no candidate")
+	if !d.NoAction {
+		t.Errorf("Warn produced action candidates %v; advisories are not actions",
+			d.Candidates)
 	}
-	if d.NoAction {
-		t.Errorf("NoAction=true with %d candidate(s): the pipeline will drop them",
-			len(d.Candidates))
+	if d.Reason == "" {
+		t.Error("Warn produced no reason; a silent verdict is not acceptable")
 	}
 }
 

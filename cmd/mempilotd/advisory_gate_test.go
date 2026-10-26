@@ -316,3 +316,44 @@ func TestEscalationOverridesDedup(t *testing.T) {
 		t.Errorf("escalation to Critical was suppressed (%d -> %d)", atWarn, got)
 	}
 }
+
+// The advisory path must produce output for a verdict that deserves one,
+// through the real policy, executor and rate limiter — not just be free of
+// refusals. Measured: for an hour after the rate-limit fix the classifier
+// produced 205 unknown, 36 cache and 1 workload verdict and no leak at all, so
+// "0 refused" meant nothing about whether the path works.
+func TestAdvisoryPathProducesOutputForARealVerdict(t *testing.T) {
+	dir := t.TempDir()
+	lg, err := ledger.Open(dir, "ledger")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lg.Close()
+	h := &daemonHandler{lg: lg, lastAdvisory: map[string]time.Time{}}
+	s := model.SystemSample{At: time.Unix(1793000000, 0), PageBytes: 16384,
+		FreePages: 4000, KernelLevel: model.LevelWarn,
+		MachStatsQuality: model.QualGood, KernelLevelQuality: model.QualGood}
+	vs := []classify.Verdict{{
+		GroupKey: "leftover-build", Bucket: classify.LeakSuspicion,
+		Confidence: 0.65, Basis: []string{"sustained 1500s >= 1200s"}, GrowthMB: 900,
+	}}
+	h.recordVerdicts(s, vs, nil)
+
+	entries, _ := os.ReadDir(dir)
+	var advisories int
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".jsonl") {
+			continue
+		}
+		b, _ := os.ReadFile(filepath.Join(dir, e.Name()))
+		for _, line := range strings.Split(string(b), "\n") {
+			if strings.Contains(line, `"kind":"advisory"`) || strings.Contains(line, `"kind": "advisory"`) {
+				advisories++
+			}
+		}
+	}
+	if advisories != 1 {
+		t.Errorf("%d advisories written for a leak verdict at Warn, want 1 — "+
+			"the path is silent for the verdict it exists to deliver", advisories)
+	}
+}

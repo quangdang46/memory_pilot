@@ -81,9 +81,13 @@ func (e *Engine) Evaluate(in Input) model.Decision {
 		// and then silently discarded by the pipeline — measured in the field:
 		// 50 Prevent samples produced 'policy_no_action' with
 		// candidates=["emit_advisory"] and no action ever executed.
-		d.Reason = "watch/prevent: advisory only in this state"
-		d.Candidates = append(d.Candidates, model.Candidate{Kind: model.ActionEmitAdvisory})
-		d.NoAction = false
+		// No action candidate. An advisory is produced by recordVerdicts from
+		// the verdicts themselves — that is where the text, the dedup and the
+		// rate are decided. Offering it here as an "action" meant the executor
+		// reported "advisory recorded" 40 times while the ledger received zero
+		// advisories, because no actor was ever wired to do the writing.
+		d.Reason = "watch/prevent: advisories come from the verdicts, no action"
+		d.NoAction = true
 		return d
 	}
 	// Prevent/Critical: expected-benefit reasoning
