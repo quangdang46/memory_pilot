@@ -252,9 +252,37 @@ var agentExe = map[string]bool{
 	"codeium": true, "windsurf": true, "plandex": true, "crush": true,
 }
 
+// isAgent matches any path segment, not just the base name. Claude Code stores
+// its builds at ~/.local/share/claude/versions/<version>, so the base name of
+// the running image is "2.1.310" and a base-name check reports the agent as an
+// anonymous process. Measured live: three such processes were named releasable.
 func isAgent(exe string) bool {
-	base := exeBase(exe)
-	return agentExe[exe] || agentExe[base]
+	if agentExe[exe] || agentExe[exeBase(exe)] {
+		return true
+	}
+	for _, seg := range strings.Split(exe, "/") {
+		if agentExe[seg] {
+			return true
+		}
+	}
+	return false
+}
+
+// protectedApp is matched as a substring of the image path. These are
+// application bundles whose main process is not a helper: naming the browser or
+// the editor itself is the same hazard as naming its helpers, and a helper list
+// alone does not catch it.
+var protectedApp = []string{
+	".app/Contents/MacOS/Google Chrome",
+	".app/Contents/MacOS/VS Code",
+	".app/Contents/MacOS/ZCode",
+	".app/Contents/MacOS/Docker",
+	".app/Contents/MacOS/WezTerm",
+	".app/Contents/MacOS/iTerm",
+	".app/Contents/MacOS/Finder",
+	".app/Contents/MacOS/Dock",
+	"Visual Studio Code.app",
+	"ZCode.app",
 }
 
 var protectedPrefix = []string{
@@ -282,6 +310,11 @@ func isProtected(exe string) bool {
 	}
 	for _, p := range protectedPrefix {
 		if strings.HasPrefix(exe, p) || strings.HasPrefix(base, p) {
+			return true
+		}
+	}
+	for _, p := range protectedApp {
+		if strings.Contains(exe, p) {
 			return true
 		}
 	}

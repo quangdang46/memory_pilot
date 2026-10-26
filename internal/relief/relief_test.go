@@ -575,3 +575,24 @@ func TestProtectionMatchesFullPaths(t *testing.T) {
 		t.Error("a plain probe binary was treated as protected")
 	}
 }
+
+// Claude Code keeps its builds at ~/.local/share/claude/versions/<version>, so
+// the running image's base name is "2.1.310". A base-name check reports the
+// agent as an anonymous process; measured live, three were named releasable.
+func TestAgentMatchedByPathSegment(t *testing.T) {
+	for _, exe := range []string{
+		"/Users/tranquangdang21/.local/share/claude/versions/2.1.310",
+		"/opt/homebrew/lib/node_modules/@openai/codex/bin/codex.js",
+		"/Applications/ZCode.app/Contents/Frameworks/ZCode Helper.app/Contents/MacOS/ZCode Helper",
+		"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+		"/Applications/Visual Studio Code.app/Contents/MacOS/Electron",
+	} {
+		if !isAgent(exe) && !isProtected(exe) {
+			t.Errorf("%q would be named as releasable", exe)
+		}
+	}
+	// The genuine orphan must survive every list.
+	if isAgent("/private/tmp/orphanprobe") || isProtected("/private/tmp/orphanprobe") {
+		t.Error("the probe binary was excluded by a protection rule")
+	}
+}
