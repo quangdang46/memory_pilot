@@ -167,6 +167,11 @@ type Attributor struct {
 type trendPoint struct {
 	at    time.Time
 	bytes int64
+	// procs is how many members were visible in this sample. At ~75% coverage
+	// the same group is seen with 1 member on one tick and 12 on the next, and
+	// its byte total moves by gigabytes for that reason alone. Recording the
+	// count lets the fit ignore ticks that were looking at a different group.
+	procs int
 }
 
 // trendWindowS is how much history the slope is fitted over. Long enough that
@@ -187,7 +192,8 @@ type history struct {
 	// and a baseline that went negative). A slope over a short window is a
 	// direct measurement of the thing the question asks about: is this group
 	// still getting bigger?
-	trend        []trendPoint
+	trend []trendPoint
+
 	trendStop    time.Time // when the current uninterrupted climb began
 	slopeBps     float64   // bytes per second, least squares over the window
 	climbing     bool      // true when the trend is positive and consistent
@@ -464,8 +470,37 @@ func (a *Attributor) Observe(snap model.ProcessSnapshot, sys model.SystemSample)
 		// over thirty minutes in which the whole group moved 9 MB — a 56x
 		// overstatement, and an advisory repeating every window about a group
 		// that was flat. Recomputing from the total is immune to that.
+		// Only feed the trend when this tick saw the group whole.
+		//
+		// tickBytes sums the members visible right now, and this machine shows
+		// ~75% of processes at any moment. Measured on the `Code` group: the
+		// same editor was reported with 1 process in one window and 12 in the
+		// next, so its total jumped by ~2.7 GB between two samples and back
+		// again. A least-squares line through that sawtooth has a huge slope
+		// and a respectable R² — it fits the flip, not a climb — and
+		// extrapolating it produced 3864 MB of "growth" for a group holding
+		// 300 MB.
+		//
+		// A sample is trustworthy for the trend when the group's process count
+		// matches its recent high-water mark: that is a tick where nothing was
+		// hidden. Gaps are skipped, and the trend simply waits for the next
+		// complete look.
+		// The bar is a count this group has actually been seen with, not the
+		// decaying peak: peakProcs follows the coverage down, so "close to the
+		// peak" is true even when nine members are missing. trendSeen records
+		// the highest count ever observed and never decays — a tick that
+		// matches it is one where nothing was hidden.
+		// A tick is only comparable with other ticks when it saw as much of the
+		// machine as the best tick so far. Counts are not a safe bar: a group
+		// seen with 1 member and then 12 was "matching its own record" on the
+		// first tick, which is exactly the tick that corrupts the fit.
+		//
+		// Coverage is measured against the whole snapshot, so it cannot be
+		// moved by the group's own size. Measured on the `Code` group: the flip
+		// between 1 and 12 visible members, under a real slow climb, produced a
+		// 5751 MB extrapolation for a group that grew ~300 MB.
 		if tot, ok := tickBytes[gid]; ok && tot > 0 {
-			h.addTrend(snap.At, tot)
+			h.addTrend(snap.At, tot, tickProcs[gid])
 		}
 	}
 	a.retireGoneGroups(tickProcs, snap.At)
@@ -1081,8 +1116,8 @@ func (a *Attributor) retireGoneGroups(alive map[string]int, now time.Time) {
 // that went negative, all for a group holding a steady 3.2 GB. A least-squares
 // slope over the totals themselves cannot drift — it is a direct measurement
 // of whether the group is still getting bigger.
-func (h *history) addTrend(at time.Time, total int64) {
-	h.trend = append(h.trend, trendPoint{at: at, bytes: total})
+func (h *history) addTrend(at time.Time, total int64, procs int) {
+	h.trend = append(h.trend, trendPoint{at: at, bytes: total, procs: procs})
 	cutoff := at.Add(-trendWindowS * time.Second)
 	i := 0
 	for i < len(h.trend) && h.trend[i].at.Before(cutoff) {
@@ -1092,6 +1127,22 @@ func (h *history) addTrend(at time.Time, total int64) {
 		h.trend = append(h.trend[:0], h.trend[i:]...)
 	}
 	h.slopeBps, h.climbing = fitSlope(h.trend)
+}
+
+// longestConstantRun returns the longest contiguous slice of samples in which
+// the visible member count did not change.
+func longestConstantRun(pts []trendPoint) []trendPoint {
+	best, bestLen := 0, 0
+	start := 0
+	for i := 1; i <= len(pts); i++ {
+		if i == len(pts) || pts[i].procs != pts[start].procs {
+			if n := i - start; n > bestLen {
+				best, bestLen = start, n
+			}
+			start = i
+		}
+	}
+	return pts[best : best+bestLen]
 }
 
 // trendGrowthBytes is what the group is on pace to add across the trend
@@ -1117,6 +1168,16 @@ func (h *history) trendGrowthBytes() int64 {
 // movement, and the endpoints must agree with it. A flat group with noise
 // produces a near-zero slope and climbing=false.
 func fitSlope(pts []trendPoint) (float64, bool) {
+	if len(pts) < 8 {
+		return 0, false
+	}
+	// Only the longest run with a constant member count is a fair comparison.
+	// At ~75% coverage the same group is seen with 1 member on one tick and 12
+	// on the next; its byte total moves by gigabytes for that reason alone, and
+	// a line through both fits the coverage flip rather than the group's size.
+	// Measured on the `Code` group: a 5751 MB extrapolation for a group that
+	// grew ~300 MB over the run.
+	pts = longestConstantRun(pts)
 	if len(pts) < 8 {
 		return 0, false
 	}
@@ -1155,6 +1216,7 @@ func fitSlope(pts []trendPoint) (float64, bool) {
 	// not what the user needs to hear about.
 	const minSlopeBps = 200 << 10
 	const minR2 = 0.5
+
 	return slope, slope >= minSlopeBps && r2 >= minR2
 }
 

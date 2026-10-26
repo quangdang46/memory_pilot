@@ -1387,3 +1387,57 @@ func TestNoisyFitDoesNotBecomeGrowth(t *testing.T) {
 		t.Errorf("a confirmed trend extrapolated to %d", got)
 	}
 }
+
+// A trend must be fed only by ticks that saw the whole group. Measured: the
+// `Code` group was reported with 1 process in one window and 12 in the next,
+// so its total jumped ~2.7 GB between samples and back. A least-squares line
+// through that sawtooth has a large slope and a good enough R² to pass the
+// trend test — it fits the flip, not the climb — and extrapolating it produced
+// 3864 MB of growth for a group holding 300 MB.
+//
+// The flip alone does not produce that: with nothing underneath, R² fails and
+// climbing is false, which the earlier guard catches. The failure needs a real
+// slow climb under a flipping total, which is what this reproduces.
+func TestCoverageFlipDoesNotEnterTheTrend(t *testing.T) {
+	a := New(60)
+	start := t0
+	for i := 0; i < 40; i++ {
+		visible := 1
+		if i%2 == 1 {
+			visible = 12
+		}
+		grow := uint64((100 + i*5) << 20) // a genuine slow climb underneath
+		entries := [][3]any{{int32(900), int32(1), grow}}
+		for j := 0; j < visible; j++ {
+			entries = append(entries, [3]any{int32(1000 + j), int32(900), grow})
+		}
+		s := snapWithParents(entries)
+		s.At = start.Add(time.Duration(i) * 15 * time.Second)
+		for k := range s.Processes {
+			s.Processes[k].Identity.Executable = "/Applications/Code.app/Contents/MacOS/Code"
+		}
+		// The flip is a coverage fact: the full snapshot is 100 processes, of
+		// which this tick could read only what it saw.
+		s.Coverage = model.Coverage{Attempted: 100, Succeeded: len(entries)}
+		a.Observe(s, sys(200000))
+	}
+	a.mu.Lock()
+	var worst int64
+	var peak int
+	for _, h := range a.history {
+		if g := h.trendGrowthBytes(); g > worst {
+			worst = g
+		}
+		if h.peakProcs > peak {
+			peak = h.peakProcs
+		}
+	}
+	a.mu.Unlock()
+	// The group holds at most 13 * 295 MB ≈ 3.8 GB at the last tick, and grew
+	// about 300 MB over the run. Anything near the extrapolated 5751 MB means
+	// the flip was fitted.
+	if worst > 3<<30 {
+		t.Errorf("extrapolated %d MB of growth (peak %d procs) from a group "+
+			"that grew ~300 MB", worst>>20, peak)
+	}
+}
