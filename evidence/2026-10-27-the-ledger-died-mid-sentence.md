@@ -156,3 +156,50 @@ indistinguishable from a quiet period.
   absent from `~/Library/LaunchAgents`; the daemon had been running unmanaged
   since its last start, so nothing would have restarted it. `KeepAlive` is only
   worth anything if the job is loaded.
+
+## The second half: `status` was the thing that lied
+
+Making the failure visible on stderr was not enough. The owner does not read
+`launchd.err.log`; they run `status`. And `status` printed
+
+```
+mempilotd pid 8076 | uptime 19h17m33s | ... | ledger 40.8MB
+```
+
+for the entire 31 hours. That number is `Ledger.SizeBytes()`, which globs the
+files and sums their sizes on disk. It describes what was written, never
+whether writing is still possible — so it read as healthy precisely because the
+ledger had died with records in it.
+
+`status` now also carries `ledger_healthy`, `ledger_error` and `ledger_seq` from
+a `Health()` that reports the write path rather than the files. When writes are
+not landing, the CLI prints above everything else:
+
+```
+  WARNING: the ledger is not accepting writes: <reason>
+  everything below is computed live; nothing is being recorded
+```
+
+### What is verified, and what is not
+
+**Verified live:** the healthy path. The rebuilt daemon reports
+`"ledger_healthy":true, "ledger_error":""` and prints no warning, while ledger
+bytes continue to grow.
+
+**Verified in tests, at both layers:** the failure path. `Health()` returns
+false with the reason after the handle dies while `SizeBytes()` still returns a
+nonzero value — the exact trap — and `ledgerWarning` names both the failure and
+its consequence.
+
+**Not verified end to end:** a live daemon actually printing the warning. The
+attempt was made by filling a 20 MB disk image until `df` reported 94% full;
+the daemon went on appending because its records are small and the writes still
+fit, so `Health()` correctly stayed true and the warning correctly stayed
+silent. That is a valid result — it means the check did not fire when it should
+not have — but it is not the same as watching it fire. Reproducing a real
+`ENOSPC` inside a daemon whose ledger appends a few KB at a time needs a tighter
+quota than a filesystem image provides.
+
+The previous incident was found by a number that looked fine. This one is
+closed by a number that now cannot look fine while the thing it describes is
+broken — but that sentence has only been proven on the healthy side.
