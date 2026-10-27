@@ -143,3 +143,38 @@ The last row is the only one open. It cannot be closed by more code: it needs
 a real pressure event, and driving this 16 GB machine to Warn deliberately
 would require the exhaustion the owner ruled out. The next genuine pressure
 episode is the experiment.
+
+## A limit worth stating: the board cannot fire in its first 20 minutes
+
+The classifier requires 1200 s of continuous evidence before it will call
+anything a suspicion, and the attribution history that supplies it lives in
+memory. A restart therefore starts the clock again.
+
+Measured over the whole ledger (19 208 system samples, 2026-10-25 to 2026-10-27),
+splitting at any gap longer than 60 s — the only way to tell a real daemon
+outage from a temporary loss of evidence quality, since `from: Unknown` is
+produced by both:
+
+| run | length | could produce a verdict |
+|---|---|---|
+| 2026-10-25 11:25 → 18:55 | 7.50 h | yes |
+| 2026-10-25 18:56 → 18:57 | 0.02 h | no |
+| 2026-10-25 18:58 → 18:59 | 0.00 h | no |
+| 2026-10-25 19:01 → 19:20 | 0.31 h | no |
+| 2026-10-25 19:21 → 2026-10-26 13:17 | 17.93 h | yes |
+| 2026-10-27 20:38 → 21:42 | 1.06 h | yes |
+
+**3 of 6.** The three short runs were caused by me restarting the daemon while
+editing it, not by anything the product did — so this is not evidence that the
+daemon restarts too often. It is evidence that the 1200 s requirement, which is
+deliberate anti-false-positive design, means a fresh start is blind for its
+first twenty minutes and cannot be argued down without a false-positive corpus
+that does not exist.
+
+A first attempt at this analysis counted `pressure_transition` records whose
+`from` was `Unknown` and concluded 42 of 64 restarts could never produce a
+verdict. That was wrong: transitions at 11:17, 11:23, 11:30 and 11:33 on one
+continuous run are minutes apart and cannot be restarts. The corrected count,
+from gaps between samples, is 5 outages in two days — and the conclusion
+reverses from "the board is structurally unable to fire" to "the board is blind
+for its first twenty minutes after a restart."
