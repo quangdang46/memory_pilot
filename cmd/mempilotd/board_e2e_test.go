@@ -223,3 +223,45 @@ func loadTrace(t *testing.T, path string) traceFile {
 	}
 	return tf
 }
+
+// The spec's `recommend` mode is "surface a specific advisory with the evidence
+// and a one-command action". An advisory that names a problem and stops leaves
+// the owner to work out what to do — that is a notification, not a
+// recommendation. The command must also be read-only: this product cannot
+// release memory (ADR-012), so it may not tell the owner to kill anything.
+func TestAdvisoryCarriesAReadOnlyCommand(t *testing.T) {
+	trace := loadTrace(t, "../../traces/slow-leak.json")
+	dir := t.TempDir()
+	lg, err := ledger.Open(dir, "ledger")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lg.Close()
+	pipe := pipeline.New(pipeline.Config{WindowS: 300}, lg, nil, nil, nil)
+	h := &daemonHandler{lg: lg, pipe: pipe, lastAdvisory: map[string]time.Time{}}
+
+	start := time.Unix(1793000000, 0)
+	leakBytes := uint64(64 << 20)
+	for elapsed := time.Duration(0); elapsed < 1500*time.Second; elapsed += 5 * time.Second {
+		sys := sampleAt(trace, start, elapsed)
+		leakBytes += 6 << 20
+		pipe.ObserveProcesses(
+			snapshotAt(start, sys.At, "/Users/someone/builds/orphaned-batch", leakBytes), sys)
+		closeAndRecord(t, h, pipe, sys, elapsed)
+	}
+
+	adv := advisoriesOf(t, lg)
+	if len(adv) == 0 {
+		t.Fatal("no advisory to check")
+	}
+	text, _ := adv[0]["text"].(string)
+	if !strings.Contains(text, "mempilot relief") {
+		t.Errorf("advisory carries no one-command action: %q", text)
+	}
+	// The product must never tell the owner to kill something.
+	for _, banned := range []string{"kill ", "kill -", "pkill", "killall"} {
+		if strings.Contains(text, banned) {
+			t.Errorf("advisory suggests a terminating command (%q): %q", banned, text)
+		}
+	}
+}

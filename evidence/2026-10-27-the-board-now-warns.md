@@ -80,12 +80,18 @@ weakened.
    process data fed to the pipeline. A real leak was observed once, on
    2026-10-26, when `leakprobe2` produced a genuine `leak_suspicion` advisory at
    12:42:18. That was before notification delivery existed.
-2. **No notification has been displayed to a human in this session.** The live
-   daemon currently reports pressure Normal, so the advisory gate is shut and no
-   advisory has fired since the delivery code was installed. `osascript` accepts
-   the call and exits 0, but macOS TCC prevents reading whether the banner was
-   shown. The honest statement is: *the mechanism is installed and the call
-   succeeds; the banner has not been seen.*
+2. **Notification display was confirmed by the owner, manually.** This one is
+   closed by asking rather than by instrumenting: the owner was sent test
+   notifications through the same `osascript` path the daemon uses — title
+   `Memory Pilot — delivery test`, body `BANNER-VISIBLE-CHECK-9931` — and
+   reported **"Có, tôi thấy banner"** (yes, I saw the banner). So macOS does
+   deliver a banner from `osascript` on this machine; the path is not silently
+   swallowed by TCC or Focus.
+
+   What that does not establish: the banner was seen from a *test send*, not
+   from an advisory the daemon emitted. The live daemon has been at Normal
+   pressure throughout, so its own delivery has never fired. The mechanism is
+   proven; the mechanism *in the advisory path, at pressure* is not.
 3. **The pressure was simulated by a trace, not raised on the machine.** Driving
    this 16 GB Mac to Warn to observe a real advisory would require the memory
    exhaustion the owner explicitly ruled out.
@@ -96,3 +102,44 @@ to stay quiet on the shape it must not report. Its *delivery* is implemented and
 inspectable but not observed reaching a screen. Closing that last gap needs
 either a real Warn event with the owner watching, or a moment arranged
 deliberately — and it should be stated as open until one of those happens.
+
+## The advisory now carries an action
+
+The spec's `recommend` mode is "surface a specific advisory with the evidence
+and a one-command action". Until this change an advisory ended with its
+evidence and left the owner to work out what to do — a notification about a
+problem, not a recommendation. Every advisory now ends with:
+
+```
+— run `mempilot relief` to see what could be released
+```
+
+`mempilot relief` is read-only: it answers "what could be released, how much
+would that return, and is that enough" and closes nothing. Printing a `kill`
+command here would be the product telling the owner to do the one thing its
+design forbids (ADR-012, "Revisit triggers: None"), so a test asserts that no
+advisory text contains `kill`, `pkill` or `killall`.
+
+Checked against the old code rather than assumed — the test fails there:
+
+```
+--- FAIL: TestAdvisoryCarriesAReadOnlyCommand
+    advisory carries no one-command action: "group orphaned-batch grew by 1440 MB —
+    unexplained sustained growth (suspicion) (confidence 0.65; basis: [...])"
+```
+
+## Where the whole claim now stands
+
+| Claim | Status |
+|---|---|
+| The board fires on the shape it exists for | **proven** (integration test, real pipeline + ledger) |
+| The board stays silent when growth plateaus | **proven** (same fixture, growth stops) |
+| A written advisory carries an action | **proven** (test, fails without the fix) |
+| A ledger failure cannot swallow an advisory | **proven** (test: no "emitted" when the write fails) |
+| macOS shows a banner from this delivery path | **proven by the owner** (test send, seen) |
+| The daemon's own advisory reached a screen | **not proven** — needs a real Warn event while the owner is watching |
+
+The last row is the only one open. It cannot be closed by more code: it needs
+a real pressure event, and driving this 16 GB machine to Warn deliberately
+would require the exhaustion the owner ruled out. The next genuine pressure
+episode is the experiment.

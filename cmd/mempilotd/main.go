@@ -449,6 +449,25 @@ func suppressedWhy(v classify.Verdict, why string) map[string]any {
 		"growth_mb": v.GrowthMB, "why": why}
 }
 
+// suggestAction returns the one command that answers this advisory, or "" when
+// there is nothing the owner could run.
+//
+// It is deliberately a read-only command. The product cannot release memory
+// (ADR-012, "Revisit triggers: None"), so the only honest next step is asking
+// the tool what could be released and whether it is enough — `mempilot relief`
+// answers exactly that and closes processes nothing. Printing `kill <pid>`
+// here would be the product telling the owner to do the one thing it spent
+// its design forbidding.
+//
+// Workload growth gets no command on purpose: a dev server holding 3 GB is the
+// cost of work the owner asked for, and there is no action to recommend for it.
+func suggestAction(group string) string {
+	if group == "" {
+		return ""
+	}
+	return "run `mempilot relief` to see what could be released"
+}
+
 // pressureName renders a level for the record.
 func pressureName(l model.PressureLevel) string {
 	switch l {
@@ -574,6 +593,15 @@ func (h *daemonHandler) recordVerdicts(s model.SystemSample, vs []classify.Verdi
 		if viol := classify.PhraseTest(text); len(viol) > 0 {
 			// SI-5 guard: never let a conclusion slip into report text.
 			text = "group " + v.GroupKey + " growth recorded; wording suppressed by the phrase test"
+		}
+		// The specification's `recommend` mode is "surface a specific advisory
+		// with the evidence and a one-command action". The advisory used to end
+		// with the evidence and leave the owner to work out what to do, which
+		// makes it a notification about a problem rather than a recommendation.
+		// The command shown is read-only by construction (SI-1/ADR-012): it
+		// asks what could be released, it does not release anything.
+		if cmd := suggestAction(v.GroupKey); cmd != "" && !strings.Contains(text, cmd) {
+			text += " — " + cmd
 		}
 		// Record the pressure this was emitted at. Without it every later
 		// question — "was that advisory at Warn or at Normal?", "did the gate
