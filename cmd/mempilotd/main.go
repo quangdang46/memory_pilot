@@ -371,10 +371,58 @@ func (h *daemonHandler) emitReliefIfChanged(at time.Time, text string, reliefMB,
 	if same && !escalated {
 		return
 	}
-	_ = h.lg.Append(map[string]any{"kind": "relief_recommendation", "at": at,
+	// The board must actually warn. On 2026-10-26 the machine reached Critical
+	// fourteen times; each time this recommendation was written to the ledger
+	// and nothing else happened. The owner could only find it later in
+	// `report`, which is the "log, not a board" failure. Only notify once the
+	// record is safely written, so a delivery claim never outlives its evidence.
+	if err := h.lg.Append(map[string]any{"kind": "relief_recommendation", "at": at,
 		"kernel_level": int(level), "escalated": escalated,
 		"shortfall_mb": shortfallMB, "total_relief_mb": reliefMB,
-		"sufficient": shortfallMB <= reliefMB, "candidates": cands, "text": text})
+		"sufficient": shortfallMB <= reliefMB, "candidates": cands, "text": text}); err != nil {
+		return
+	}
+	if !deliverRelief(level) {
+		return
+	}
+	go func(body string) {
+		ok, reason := notifyUser("Memory Pilot — memory pressure", body)
+		_ = h.lg.Append(map[string]any{"kind": "advisory_notification",
+			"at": time.Now(), "group": "relief", "bucket": "relief_recommendation",
+			"delivered": ok, "reason": reason})
+	}(reliefNotificationBody(text, reliefMB, shortfallMB))
+}
+
+// reliefNotificationBody is the one-line form of a recommendation. The full
+// text is many lines with per-process detail; Notification Center shows a
+// couple of lines and truncates the rest, so sending it whole would push the
+// actionable part out of sight. The command is kept — that is the point of an
+// advisory — and the total is kept because it is the number that decides
+// whether the owner has to do anything at all.
+func reliefNotificationBody(text string, reliefMB, shortfallMB int64) string {
+	if reliefMB <= 0 {
+		// Nothing releasable: the shortfall is the whole message.
+		return fmt.Sprintf("short %d MB and nothing can be released safely — run `mempilot relief`",
+			shortfallMB)
+	}
+	if shortfallMB <= reliefMB {
+		return fmt.Sprintf("~%d MB could be released — enough to cover the %d MB shortfall. Run `mempilot relief`",
+			reliefMB, shortfallMB)
+	}
+	return fmt.Sprintf("~%d MB could be released; short by %d MB. Run `mempilot relief`",
+		reliefMB, shortfallMB)
+}
+
+// deliverRelief decides whether a relief recommendation is worth a desktop
+// notification.
+//
+// Every automatic recommendation is already rate-limited and deduplicated
+// upstream, so anything that reaches here is news by construction — the
+// escalation case above exists precisely because Critical must be spoken.
+// Returns true for Warn and above; below that the owner did not ask to be
+// interrupted about a comfortable machine.
+func deliverRelief(level model.PressureLevel) bool {
+	return level >= model.LevelWarn
 }
 
 // buildRecommendation is the whole L1 computation, with no gate on pressure and

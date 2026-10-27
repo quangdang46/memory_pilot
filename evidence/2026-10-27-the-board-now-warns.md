@@ -178,3 +178,32 @@ continuous run are minutes apart and cannot be restarts. The corrected count,
 from gaps between samples, is 5 outages in two days — and the conclusion
 reverses from "the board is structurally unable to fire" to "the board is blind
 for its first twenty minutes after a restart."
+
+## The relief board was silent at the exact moments that mattered
+
+The 14 Critical transitions on 2026-10-26 all produced `relief_recommendation`
+rows written to the ledger, but none were delivered to the user. At
+11:18:01 (pressure Prevent, sliding toward Critical), the daemon logged:
+
+```
+closing 5 abandoned workload(s) would return ~601 MB
+  /Users/.../node (pid 64747): 120 MB, idle by its own CPU record, parent gone
+      to release: kill 64747
+  ... (4 more)
+shortfall is 3181 MB — this will NOT cover it, and nothing else can be released safely
+```
+
+That recommendation was logged, not shown. The user would have had to run
+`mempilot report` to see it — which is exactly what the request was trying to
+avoid.
+
+It is delivered now. Only when Warn or above, after being written to the
+ledger, and as a short banner body carrying the total and the command (the full
+multi-line recommendation is too long for Notification Center without pushing
+the action out of view). Below Warn there is no notification — a comfortable
+machine does not need interrupting.
+
+TestReliefRecommendationIsDeliveredNotJustLogged drives `emitReliefIfChanged`
+with the same inputs as that Critical moment and requires a delivery record to
+appear. It fails against the old code ("BOARD DID NOT SPEAK") and passes
+now.
