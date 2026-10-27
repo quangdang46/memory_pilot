@@ -78,6 +78,24 @@ func usage() {
 `)
 }
 
+// ledgerWarning is the sentence `status` prints when the ledger has stopped
+// accepting writes, or "" when it is healthy.
+//
+// It exists because the status line reports the ledger's size on disk, and that
+// size survives the write path dying: on 2026-10-26 the daemon printed
+// "ledger 40.8MB" for 31 hours while recording nothing. A number that only
+// describes the past is not health.
+func ledgerWarning(healthy bool, reason string) string {
+	if healthy {
+		return ""
+	}
+	if reason == "" {
+		reason = "unknown"
+	}
+	return "\n  WARNING: the ledger is not accepting writes: " + reason +
+		"\n  everything below is computed live; nothing is being recorded"
+}
+
 // status prints the one-line health summary plus per-group growth. The JSON
 // form is still available with --json for scripts.
 func status(args []string) {
@@ -87,14 +105,19 @@ func status(args []string) {
 		return
 	}
 	var d struct {
-		Line       string  `json:"line"`
-		Uptime     int64   `json:"uptime_s"`
-		Groups     []group `json:"groups"`
-		Actionable bool    `json:"actionable"`
-		TteS       float64 `json:"tte_s"`
+		Line          string  `json:"line"`
+		Uptime        int64   `json:"uptime_s"`
+		Groups        []group `json:"groups"`
+		Actionable    bool    `json:"actionable"`
+		TteS          float64 `json:"tte_s"`
+		LedgerHealthy bool    `json:"ledger_healthy"`
+		LedgerError   string  `json:"ledger_error"`
 	}
 	json.Unmarshal(raw, &d)
 	fmt.Println(d.Line)
+	if w := ledgerWarning(d.LedgerHealthy, d.LedgerError); w != "" {
+		fmt.Println(w)
+	}
 	if len(d.Groups) == 0 {
 		fmt.Println("\n  no attribution window closed yet (first one lands after 5 min)")
 		return

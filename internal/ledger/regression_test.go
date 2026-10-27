@@ -207,3 +207,36 @@ func TestOpenLifecycleAcrossRotations(t *testing.T) {
 		t.Fatalf("lost records across rotations: sum %d, want 3", n)
 	}
 }
+
+// `status` used to report only the size of the ledger on disk, which stays
+// healthy-looking after every write has started failing. Health must report
+// the write path, not the files.
+func TestHealthReportsTheWritePathNotTheFileSize(t *testing.T) {
+	dir := t.TempDir()
+	l, err := Open(dir, "h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok, msg, seq := l.Health(); !ok || msg != "" || seq != 1 {
+		t.Fatalf("healthy ledger reported ok=%v msg=%q seq=%d", ok, msg, seq)
+	}
+	if err := l.Append(map[string]int{"i": 0}); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _, _ := l.Health(); !ok {
+		t.Fatal("healthy after a successful append")
+	}
+	// The exact production state: handle closed, records still on disk.
+	l.Close()
+	if l.SizeBytes() <= 0 {
+		t.Fatal("size should still be non-zero; that is the trap")
+	}
+	_ = l.Append(map[string]int{"i": 1})
+	ok, msg, _ := l.Health()
+	if ok {
+		t.Fatal("reported healthy while every write fails")
+	}
+	if msg == "" {
+		t.Fatal("unhealthy but gave no reason")
+	}
+}

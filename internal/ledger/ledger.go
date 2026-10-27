@@ -195,6 +195,20 @@ func (l *Ledger) Append(v any) error {
 	return l.note(l.appendLocked(b))
 }
 
+// Health is what `status` reports. SizeBytes alone is not health: it is
+// measured from disk, so a ledger whose handle died still reports the size of
+// the records it wrote before it died. On 2026-10-26 the daemon printed
+// "ledger 40.8MB" for 31 hours while writing nothing. Healthy means writes are
+// landing right now.
+func (l *Ledger) Health() (healthy bool, lastError string, seq int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.failing && l.lastErr != nil {
+		return false, l.lastErr.Error(), l.seq
+	}
+	return l.f != nil, "", l.seq
+}
+
 // appendLocked writes one marshalled record. Callers hold l.mu.
 func (l *Ledger) appendLocked(b []byte) error {
 	if l.f == nil {

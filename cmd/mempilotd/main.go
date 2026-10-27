@@ -706,9 +706,13 @@ func (h *daemonHandler) Handle(ctx context.Context, req ipc.Request) (ipc.Respon
 			Reliable: lastState != "", SelfRSSMB: s.RSSMB, SelfCPUPct: s.CPUPct,
 			LedgerMB: s.LedgerMB,
 		})
+		// A ledger that stopped accepting writes must not report the size of
+		// what it wrote before it broke and look fine.
+		ledgerOK, ledgerErr, ledgerSeq := h.lg.Health()
 		raw, _ := json.Marshal(map[string]any{
 			"healthy": h.mon.Healthy(), "rss_mb": s.RSSMB, "cpu_pct": s.CPUPct,
 			"goroutines": s.Goroutines, "ledger_mb": s.LedgerMB, "detail": s.Budget.Detail,
+			"ledger_healthy": ledgerOK, "ledger_error": ledgerErr, "ledger_seq": ledgerSeq,
 			"kernel_level": lastLevel, "free_mb": lastFreeMB, "line": line,
 			"uptime_s": h.UptimeSeconds(), "mode": h.mode,
 			"tte_s": lastTte, "lower_s": lastLower, "confidence": lastConf,
