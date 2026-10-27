@@ -148,3 +148,62 @@ func TestBrokenLedgerIsReportedNotSilent(t *testing.T) {
 		t.Fatalf("failure reported more than once per episode: %v", events)
 	}
 }
+
+// The unit tests above call openWith directly. The daemon goes through Open,
+// so the whole lifecycle is exercised here the way the daemon actually drives
+// it: reopen, append, rotate on demand, restart, append again.
+func TestOpenLifecycleAcrossRotations(t *testing.T) {
+	dir := t.TempDir()
+	for _, n := range []string{"0001", "0002", "0003"} {
+		if err := os.WriteFile(filepath.Join(dir, "life."+n+".jsonl"),
+			[]byte(versionHeader+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	l, err := Open(dir, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Append(map[string]int{"i": 0}); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Rotate(); err != nil {
+		t.Fatalf("rotate at seq 3: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "life.0004.jsonl")); err != nil {
+		t.Fatalf("rotate did not create seq 4: %v", err)
+	}
+	if err := l.Append(map[string]int{"i": 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	l2, err := Open(dir, "life")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l2.Close()
+	if l2.seq != 4 {
+		t.Fatalf("reopened at seq %d, want 4", l2.seq)
+	}
+	if err := l2.Append(map[string]int{"i": 2}); err != nil {
+		t.Fatal(err)
+	}
+	recs, err := l2.ReadAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	for _, r := range recs {
+		var v map[string]int
+		if err := json.Unmarshal(r, &v); err != nil {
+			t.Fatal(err)
+		}
+		n += v["i"]
+	}
+	if n != 3 {
+		t.Fatalf("lost records across rotations: sum %d, want 3", n)
+	}
+}
