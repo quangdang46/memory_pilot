@@ -180,6 +180,8 @@ func report(args []string) {
 			if len(advisories) < 6 && !olderThan(r, 15*time.Minute) {
 				advisories = append(advisories, r)
 			}
+		case "advisory_notification":
+			// delivery outcome, not the advisory itself
 		}
 	}
 	if latestAttr == nil {
@@ -255,6 +257,20 @@ func report(args []string) {
 			fmt.Printf("  [%s] %s\n", strOf(a["strength"]), strOf(a["text"]))
 		}
 	}
+	// Whether the user was actually told, and whether the OS accepted it.
+	// "Recorded" and "delivered" are different facts and must not be merged:
+	// an advisory in the ledger that never reached Notification Center is the
+	// silent-board failure this whole path exists to avoid.
+	if n, ok := latestNotification(recs); ok {
+		status := "handed to the system"
+		if !boolOf(n["delivered"]) {
+			status = "NOT delivered: " + strOf(n["reason"])
+		}
+		fmt.Printf("\nlast notification: %s (%s)\n", status, ago(strOf(n["at"])))
+		if at := strOf(n["at"]); at == "" || olderThan(n, 15*time.Minute) {
+			fmt.Println("  no notification in the last 15 minutes")
+		}
+	}
 }
 
 // latestAdvisoryDecision returns the newest advisory_decision row.
@@ -265,6 +281,28 @@ func latestAdvisoryDecision(recs []map[string]any) map[string]any {
 		}
 	}
 	return nil
+}
+
+// latestNotification returns the newest advisory_notification record.
+func latestNotification(recs []map[string]any) (map[string]any, bool) {
+	for i := len(recs) - 1; i >= 0; i-- {
+		if strOf(recs[i]["kind"]) == "advisory_notification" {
+			return recs[i], true
+		}
+	}
+	return nil, false
+}
+
+func boolOf(v any) bool { b, _ := v.(bool); return b }
+
+// ago renders a ledger timestamp as a coarse age, for lines that need to say
+// how current a fact is.
+func ago(at string) string {
+	ts, err := time.Parse(time.RFC3339Nano, at)
+	if err != nil {
+		return "time unknown"
+	}
+	return time.Since(ts).Round(time.Second).String() + " ago"
 }
 
 // olderThan reports whether a ledger record's timestamp is more than d ago.

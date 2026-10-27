@@ -582,18 +582,46 @@ func (h *daemonHandler) recordVerdicts(s model.SystemSample, vs []classify.Verdi
 		// Measured: four advisories had to be attributed to Warn by matching
 		// them to samples within 5 s, and that is not evidence a reader can
 		// check from the record itself.
-		_ = h.lg.Append(map[string]any{"kind": "advisory", "at": s.At,
+		// The advisory only exists if the write succeeded. Recording it as
+		// emitted regardless — and then rate-limiting the group for an hour —
+		// means a broken ledger produces an advisory nobody received, suppresses
+		// the replacement for that hour, and reports the whole thing as a
+		// success. That is the executor's "advisory recorded" defect in a new
+		// place, and it was measured: with the ledger closed, a verdict that
+		// deserved an advisory wrote zero rows and the heartbeat still listed
+		// it under "emitted".
+		if err := h.lg.Append(map[string]any{"kind": "advisory", "at": s.At,
 			"kernel_level": int(s.KernelLevel), "free_mb": (s.FreePages * s.PageBytes) >> 20,
 			"strength": strength, "text": text,
-			"group": v.GroupKey, "bucket": v.Bucket, "confidence": v.Confidence})
+			"group": v.GroupKey, "bucket": v.Bucket, "confidence": v.Confidence}); err != nil {
+			suppressed = append(suppressed, suppressedWhy(v,
+				fmt.Sprintf("advisory could not be recorded: %v", err)))
+			continue
+		}
 		emitted = append(emitted, map[string]any{
 			"group": v.GroupKey, "bucket": v.Bucket, "growth_mb": v.GrowthMB})
 		h.markAdvised(v.GroupKey, s.At)
+		// Surface to the user. The board must actually warn, not just log.
+		// Best-effort, non-blocking, only when we successfully recorded it.
+		// The rate limit already guards against spam. Delivery outcome is
+		// recorded in a separate event so "notification sent" and "notification
+		// delivered/seen" are not conflated — macOS may hand it off and still
+		// suppress it.
+		go func(group, bucket, body string) {
+			ok, reason := notifyUser("Memory Pilot — "+bucket, body)
+			_ = h.lg.Append(map[string]any{"kind": "advisory_notification",
+				"at": time.Now(), "group": group, "bucket": bucket,
+				"delivered": ok, "reason": reason})
+		}(v.GroupKey, string(v.Bucket), text)
 	}
 	// The heartbeat. One row per window saying what the advisory path did with
 	// every verdict it saw: emitted, or held back and why. Without it, a quiet
 	// window and a broken one produce the same observable — no advisories — and
 	// four defects hid behind exactly that in this file.
+	// If this write fails there is no heartbeat at all, and a broken ledger
+	// once again looks like a quiet window. The ledger's own OnError reports
+	// the failure to stderr, and `status` now reports ledger_healthy, so the
+	// information is not lost — but it cannot be lost here silently either.
 	_ = h.lg.Append(map[string]any{"kind": "advisory_decision", "at": s.At,
 		"verdicts": len(vs), "emitted": emitted, "suppressed": suppressed,
 		"pressure": int(s.KernelLevel)})
