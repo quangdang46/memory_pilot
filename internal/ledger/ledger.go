@@ -29,6 +29,14 @@ type Ledger struct {
 	f           *os.File
 	size        int64
 	seq         int
+	// onError is called on the first failed write of an episode and again on
+	// the first success after one. Every Append caller in the daemon discards
+	// the error, so without this a broken ledger is indistinguishable from a
+	// quiet one — which is how the daemon sat dead for 31 hours on 2026-10-26
+	// while answering IPC normally.
+	onError func(error)
+	failing bool
+	lastErr error
 }
 
 func Open(dir, name string) (*Ledger, error) {
@@ -67,13 +75,18 @@ func (l *Ledger) files() []string {
 
 func seqOf(p string) int {
 	base := filepath.Base(p) // name.NNNN.jsonl
+	base = strings.TrimSuffix(base, ".jsonl")
+	// base is name.NNNN
 	i := strings.LastIndex(base, ".")
+	if i < 0 || i == len(base)-1 {
+		return 0
+	}
 	var n int
-	if i > 0 {
-		fmt.Sscanf(base[:i], lNamePattern, &struct{}{}, &n)
-		if n == 0 {
-			fmt.Sscanf(strings.TrimSuffix(base, ".jsonl"), lNamePattern, &struct{}{}, &n)
+	for j := i + 1; j < len(base); j++ {
+		if base[j] < '0' || base[j] > '9' {
+			return 0
 		}
+		n = n*10 + int(base[j]-'0')
 	}
 	return n
 }
@@ -104,21 +117,24 @@ func salvage(path string) {
 }
 
 func (l *Ledger) rotateFile() error {
-	if l.f != nil {
-		l.f.Close()
-	}
-	l.seq++
-	p := filepath.Join(l.dir, fmt.Sprintf(lNamePattern, l.name, l.seq))
+	seq := l.seq + 1
+	p := filepath.Join(l.dir, fmt.Sprintf(lNamePattern, l.name, seq))
 	f, err := os.OpenFile(p, os.O_CREATE|os.O_EXCL|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return err
 	}
 	if _, err := f.WriteString(versionHeader + "\n"); err != nil {
 		f.Close()
+		os.Remove(p)
 		return err
 	}
+	old := l.f
+	l.seq = seq
 	l.f = f
 	l.size = int64(len(versionHeader) + 1)
+	if old != nil {
+		old.Close()
+	}
 	l.prune()
 	return nil
 }
@@ -143,6 +159,32 @@ func (l *Ledger) Rotate() error {
 }
 
 // Append writes one JSON record followed by a newline and fsyncs.
+// OnError installs a callback for the first failure of a write episode and for
+// the first success after it. Recovery is reported with a nil error.
+func (l *Ledger) OnError(fn func(error)) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.onError = fn
+}
+
+// note records a transition in and out of failure, and returns err unchanged.
+func (l *Ledger) note(err error) error {
+	switch {
+	case err != nil && !l.failing:
+		l.failing, l.lastErr = true, err
+		if l.onError != nil {
+			l.onError(err)
+		}
+	case err == nil && l.failing:
+		prev := l.lastErr
+		l.failing, l.lastErr = false, nil
+		if l.onError != nil {
+			l.onError(fmt.Errorf("ledger recovered after: %w", prev))
+		}
+	}
+	return err
+}
+
 func (l *Ledger) Append(v any) error {
 	b, err := json.Marshal(v)
 	if err != nil {
@@ -150,20 +192,45 @@ func (l *Ledger) Append(v any) error {
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	return l.note(l.appendLocked(b))
+}
+
+// appendLocked writes one marshalled record. Callers hold l.mu.
+func (l *Ledger) appendLocked(b []byte) error {
 	if l.f == nil {
 		return fmt.Errorf("ledger closed")
 	}
 	if l.size+int64(len(b))+1 > l.rotateBytes {
 		if err := l.rotateFile(); err != nil {
-			return err
+			// rotation failed (e.g. collision / disk full) — keep writing into
+			// the current file rather than killing the whole ledger. Losing
+			// rotation is survivable; losing every subsequent record is not.
+			// The live daemon was killed by the opposite choice.
 		}
+	}
+	if l.f == nil {
+		return fmt.Errorf("ledger closed")
 	}
 	n, err := l.f.Write(append(b, '\n'))
 	l.size += int64(n)
 	if err != nil {
+		// Best-effort recovery: the handle may be broken. Try once to
+		// reopen/rotate before giving up. Callers discard errors today, but
+		// logging the failure is the job; the guarantee is we don't drop the
+		// ledger forever because one rotation failed.
+		if rerr := l.rotateFile(); rerr != nil {
+			return err
+		}
+		n, err = l.f.Write(append(b, '\n'))
+		if err != nil {
+			return err
+		}
+		l.size += int64(n)
+	}
+	if err := l.f.Sync(); err != nil {
 		return err
 	}
-	return l.f.Sync()
+	return nil
 }
 
 func (l *Ledger) Close() error {

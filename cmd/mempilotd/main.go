@@ -98,6 +98,14 @@ func run(dataRoot, cfgPath string) error {
 	if err != nil {
 		return err
 	}
+	// Every Append call in this file discards its error, so a broken ledger
+	// reads exactly like a quiet one. On 2026-10-26 a rotation collision left
+	// the handle closed and the daemon wrote nothing for 31 hours while still
+	// answering status and pressure queries. Say it once, on the way in and on
+	// the way out, where it can be seen.
+	lg.OnError(func(e error) {
+		fmt.Fprintf(os.Stderr, "mempilotd: ledger: %v\n", e)
+	})
 	plat, err := platform.NewPlatform()
 	if err != nil {
 		return err
