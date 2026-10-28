@@ -96,15 +96,6 @@ docs/                     the specification set (start at docs/README.md)
 .tmp/                     shallow clones of the reference repositories (not part of the product)
 ```
 
-## Key references
-
-| Project | What we took |
-|---|---|
-| [`storage_ballast_helper`](https://github.com/Dicklesworthstone/storage_ballast_helper) | daemon architecture, EWMA/conformal forecasting, evidence ledger, and its working macOS memory-pressure integration |
-| [`process_triage`](https://github.com/Dicklesworthstone/process_triage) | evidence-based reasoning, process identity, protection patterns, expected-loss framing |
-| Apple developer docs | memory pressure semantics, `DISPATCH_SOURCE_TYPE_MEMORYPRESSURE` |
-
-Both reference projects are read for **design ideas only**; no source is copied. Audit notes: [`docs/01-research/`](docs/01-research/).
 
 ## Next step
 
