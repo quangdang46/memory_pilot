@@ -207,3 +207,45 @@ TestReliefRecommendationIsDeliveredNotJustLogged drives `emitReliefIfChanged`
 with the same inputs as that Critical moment and requires a delivery record to
 appear. It fails against the old code ("BOARD DID NOT SPEAK") and passes
 now.
+
+## Closed: the daemon warned the owner during a real Warn event
+
+The link every earlier section called open is now observed. On 2026-10-28 at
+09:39:21 the machine reached Warn (kernel_level 2 — the kernel's own reading,
+not a simulated one) while the daemon was running unattended. The daemon:
+
+1. found six abandoned processes holding 884 MB between them,
+2. wrote the recommendation naming each pid and the command to release it,
+3. delivered a notification two seconds later, recorded as `delivered: true`.
+
+From the live ledger, verbatim:
+
+```
+2026-10-28T09:39:21  relief_recommendation  kernel_level=2  relief=884 MB  shortfall=3152 MB
+  closing 6 abandoned workload(s) would return ~884 MB
+     (pid 39241): 283 MB, idle by its own CPU record, parent gone
+        to release: kill 39241
+    /Users/.../node (pid 64747): 120 MB, idle by its own CPU record, parent gone
+        to release: kill 64747
+    ... and 4 more
+  shortfall is 3152 MB — this will NOT cover it, and nothing else can be released safely
+
+2026-10-28T09:39:23  advisory_notification  group=relief  delivered=true  reason=(none)
+```
+
+No human invoked anything. The earlier occurrence at 08:22:06 is the same pair,
+produced while pressure was held at Warn.
+
+This closes the last open row:
+
+| Claim | Status |
+|---|---|
+| The daemon's own advisory reached a screen | **observed** — written and delivered at Warn, 2026-10-28 09:39 |
+
+What it still does not establish: that a *human looked at* the banner at that
+moment. Delivery is recorded by the daemon; whether the banner was seen is only
+knowable by asking, and at the time of this run nobody was watching. Delivery
+from this exact code path was separately confirmed by the owner from both a
+shell and a launchd context, so the mechanism is not in question — only the
+coincidence of a real event and an attentive human, which is not something the
+code can arrange.
