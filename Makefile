@@ -32,6 +32,7 @@ gates:
 	@scripts/gates/st2_sealed_actions.sh
 	@scripts/gates/st3_layering.sh
 	@scripts/gates/st4_no_network.sh
+	@scripts/gates/st13_no_user_data_deletes.sh
 
 ci: vet test gates build
 	@echo "CI GREEN"
