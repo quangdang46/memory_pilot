@@ -468,6 +468,16 @@ func (h *daemonHandler) buildRecommendation(s model.SystemSample) *relief.Recomm
 	for _, c := range cs {
 		if c.State == relief.StateAbandoned {
 			r.TotalRelief += c.ExpectedReliefBytes
+			continue
+		}
+		if c.State == relief.StateSuspicious {
+			for _, e := range c.Evidence {
+				if strings.Contains(e, "not used this process in its whole life") ||
+					strings.Contains(e, "has done no work for its whole life") {
+					r.TotalRelief += c.ExpectedReliefBytes
+					break
+				}
+			}
 		}
 	}
 	return r
